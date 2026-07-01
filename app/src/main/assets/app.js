@@ -171,6 +171,9 @@ function playVideo(url, title) {
   playerScreen.classList.add('active');
   playerTitle.textContent = title || '';
 
+  // Focus the back button for DPad navigation on Android TV
+  setTimeout(() => backBtn.focus(), 200);
+
   // Clean up old HLS instance
   if (hlsInstance) {
     hlsInstance.destroy();
@@ -225,7 +228,21 @@ document.addEventListener('keydown', (e) => {
     if (playerScreen.classList.contains('active')) {
       e.preventDefault();
       exitPlayer();
+    } else if (bridgeAvailable()) {
+      // On search screen — exit the app
+      Android.exitApp();
     }
+  }
+});
+
+// --- DPad Navigation for Player Screen ---
+document.addEventListener('keydown', (e) => {
+  if (!playerScreen.classList.contains('active')) return;
+
+  // Only handle when backBtn is a possible focus target
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    backBtn.focus();
   }
 });
 
