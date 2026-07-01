@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple TV-shaped launcher icon vector -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Background circle -->
+    <path
+        android:fillColor="#E94560"
+        android:pathData="M24,0C10.745,0 0,10.745 0,24s10.745,24 24,24s24,-10.745 24,-24S37.255,0 24,0z" />
+    <!-- TV screen -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,14h24v16H12z" />
+    <!-- TV antenna -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M24,10v4" />
+    <!-- Stand -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M18,32v4h12v-4" />
+    <!-- Play button triangle -->
+    <path
+        android:fillColor="#E94560"
+        android:pathData="M20,20v8l8,-4z" />
+</vector>

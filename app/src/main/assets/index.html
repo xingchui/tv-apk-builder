@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>TV Search</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Search Screen -->
+  <div id="searchScreen" class="screen active">
+    <div class="search-header">
+      <h1 class="app-title">TV Search</h1>
+      <div class="search-box focused" id="searchBox" tabindex="0">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="搜索影片名称…" value="">
+        <button id="searchBtn" tabindex="0">搜索</button>
+      </div>
+    </div>
+    <div id="resultsContainer" class="results-grid"></div>
+    <div id="emptyState" class="empty-state">
+      <p>输入关键词搜索影片</p>
+    </div>
+    <div id="loadingIndicator" class="loading hidden">
+      <div class="spinner"></div>
+      <p>正在搜索…</p>
+    </div>
+  </div>
+
+  <!-- Player Screen -->
+  <div id="playerScreen" class="screen">
+    <div id="videoContainer">
+      <video id="videoPlayer" controls autoplay playsinline></video>
+    </div>
+    <div class="player-bar">
+      <button id="backBtn" tabindex="0" class="back-button">← 返回</button>
+      <span id="playerTitle" class="player-title"></span>
+    </div>
+  </div>
+
+  <!-- Error Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@0.14.17/dist/hls.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow cleartext (HTTP) to ikanbot.com and video CDN domains -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">ikanbot.com</domain>
+        <domain includeSubdomains="true">ikanbot.tv</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
