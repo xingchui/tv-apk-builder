@@ -69,6 +69,11 @@ async function performSearch() {
       return;
     }
 
+    if (data.error) {
+      showToast('搜索失败: ' + data.error);
+      loadingIndicator.classList.add('hidden');
+      return;
+    }
     if (!data || !data.results || data.results.length === 0) {
       emptyState.classList.remove('hidden');
       emptyState.innerHTML = '<p>未找到结果</p>';
@@ -148,6 +153,11 @@ function openDetail(idx) {
 
     let data = JSON.parse(raw);
 
+    if (data.error) {
+      showToast('获取播放信息失败: ' + data.error);
+      loadingIndicator.classList.add('hidden');
+      return;
+    }
     if (!data.videos || data.videos.length === 0) {
       showToast('未找到视频源');
       loadingIndicator.classList.add('hidden');

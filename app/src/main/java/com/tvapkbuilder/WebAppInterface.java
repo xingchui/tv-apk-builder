@@ -127,11 +127,11 @@ public class WebAppInterface {
             return wrapper.toString();
 
         } catch (IOException e) {
-            Log.e(TAG, "Search error", e);
-            return "{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}";
+            Log.e(TAG, "Search IO error", e);
+            return new JSONObject().put("error", e.getMessage() != null ? e.getMessage() : e.toString()).toString();
         } catch (Exception e) {
-            Log.e(TAG, "Parse error", e);
-            return "{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}";
+            Log.e(TAG, "Search parse error", e);
+            return new JSONObject().put("error", e.getMessage() != null ? e.getMessage() : e.toString()).toString();
         }
     }
 
@@ -255,10 +255,10 @@ public class WebAppInterface {
 
         } catch (IOException e) {
             Log.e(TAG, "getPlayInfo IO error", e);
-            return "{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}";
+            return new JSONObject().put("error", e.getMessage() != null ? e.getMessage() : e.toString()).toString();
         } catch (Exception e) {
             Log.e(TAG, "getPlayInfo parse error", e);
-            return "{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}";
+            return new JSONObject().put("error", e.getMessage() != null ? e.getMessage() : e.toString()).toString();
         }
     }
 
