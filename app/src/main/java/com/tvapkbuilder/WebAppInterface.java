@@ -128,10 +128,10 @@ public class WebAppInterface {
 
         } catch (IOException e) {
             Log.e(TAG, "Search IO error", e);
-            return new JSONObject().put("error", e.getMessage() != null ? e.getMessage() : e.toString()).toString();
+            return errorJson(e);
         } catch (Exception e) {
             Log.e(TAG, "Search parse error", e);
-            return new JSONObject().put("error", e.getMessage() != null ? e.getMessage() : e.toString()).toString();
+            return errorJson(e);
         }
     }
 
@@ -255,10 +255,10 @@ public class WebAppInterface {
 
         } catch (IOException e) {
             Log.e(TAG, "getPlayInfo IO error", e);
-            return new JSONObject().put("error", e.getMessage() != null ? e.getMessage() : e.toString()).toString();
+            return errorJson(e);
         } catch (Exception e) {
             Log.e(TAG, "getPlayInfo parse error", e);
-            return new JSONObject().put("error", e.getMessage() != null ? e.getMessage() : e.toString()).toString();
+            return errorJson(e);
         }
     }
 
@@ -282,6 +282,34 @@ public class WebAppInterface {
     }
 
     // ---- Private helpers ----
+
+    /**
+     * Build a safe JSON error response from a Throwable.
+     * Handles null messages and special characters without throwing checked exceptions.
+     */
+    private String errorJson(Throwable t) {
+        String msg = t.getMessage() != null ? t.getMessage() : t.toString();
+        // Escape for JSON string value
+        StringBuilder sb = new StringBuilder("{\"error\":\"");
+        for (int i = 0; i < msg.length(); i++) {
+            char c = msg.charAt(i);
+            switch (c) {
+                case '"':  sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        sb.append("\"}");
+        return sb.toString();
+    }
 
     /**
      * Compute the v_tks token used by ikanbot.com's API.
