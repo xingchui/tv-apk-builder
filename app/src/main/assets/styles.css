@@ -258,28 +258,28 @@ html, body {
   gap: 16px;
 }
 
-.source-back-btn {
+.source-back-btn.back-button {
   display: flex;
   align-items: center;
   gap: 6px;
   background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1) !important;
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 8px;
-  padding: 8px 14px !important;
+  padding: 8px 14px;
   flex-shrink: 0;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s !important;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
-.source-back-btn .back-arrow {
+.source-back-btn.back-button .back-arrow {
   font-size: 18px;
   line-height: 1;
 }
-.source-back-btn .back-label {
+.source-back-btn.back-button .back-label {
   font-size: 14px;
   font-weight: 500;
 }
-.source-back-btn:focus {
-  background: rgba(233,69,96,0.15) !important;
-  border-color: var(--focus-ring) !important;
+.source-back-btn.back-button:focus {
+  background: rgba(233,69,96,0.15);
+  border-color: var(--focus-ring);
   transform: scale(1.05);
 }
 

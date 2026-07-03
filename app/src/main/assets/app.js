@@ -425,7 +425,6 @@ function exitSourceScreen() {
 
 function playVideo(url, title) {
   // Switch to player screen
-  searchScreen.classList.remove('active');
   playerScreen.classList.add('active');
   playerTitle.textContent = title || '';
 
