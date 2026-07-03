@@ -39,28 +39,29 @@ function nativeGetPlayInfo(url) {
   return null;
 }
 
-// --- CORS Proxy Config ---
-// Used when native bridge is unavailable (browser testing).
-// Set to an empty string to bypass and fetch directly.
-const CORS_PROXY_BASE = 'https://api.allorigins.win/raw?url=';
+// --- Local Proxy Config ---
+// When native bridge is unavailable (browser testing), the app tries:
+//   1. Local proxy at LOCAL_PROXY (recommended — run: node scraping-proxy.mjs)
+//   2. External CORS proxy as fallback
+const CORS_PROXY_BASE = ''; // Optional CORS proxy URL, e.g. 'https://api.allorigins.win/raw?url='
 
-async function proxyFetch(url) {
-  if (CORS_PROXY_BASE) {
-    const resp = await fetch(CORS_PROXY_BASE + encodeURIComponent(url));
-    if (!resp.ok) throw new Error('Proxy fetch failed: ' + resp.status);
-    return await resp.text();
-  }
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('Fetch failed: ' + resp.status);
-  return await resp.text();
+async function localProxySearch(query) {
+  let resp = await fetch('/api/search?q=' + encodeURIComponent(query));
+  if (!resp.ok) throw new Error('Local proxy search failed: ' + resp.status);
+  return await resp.json();
 }
 
-// --- Browser Fallback (uses fetch + DOMParser) ---
+async function localProxyGetPlayInfo(pageUrl) {
+  let resp = await fetch('/api/play?url=' + encodeURIComponent(pageUrl));
+  if (!resp.ok) throw new Error('Local proxy play failed: ' + resp.status);
+  return await resp.json();
+}
+
+// --- External CORS Proxy Fallback (DOMParser-based) ---
 
 const BASE_URL = 'https://www.ikanbot.com';
 
 function computeToken(currentId, eToken) {
-  // Same algorithm as WebAppInterface.computeToken()
   let suffix = currentId.slice(-4);
   let result = '';
   let remaining = eToken;
@@ -74,18 +75,21 @@ function computeToken(currentId, eToken) {
   return result;
 }
 
-async function browserSearch(query) {
-  let encoded = encodeURIComponent(query.trim());
-  let url = BASE_URL + '/search?q=' + encoded;
-  console.log('[Browser] Searching:', url);
+async function proxyFetch(url) {
+  if (!CORS_PROXY_BASE) throw new Error('No CORS proxy configured');
+  const resp = await fetch(CORS_PROXY_BASE + encodeURIComponent(url));
+  if (!resp.ok) throw new Error('Proxy fetch failed: ' + resp.status);
+  return await resp.text();
+}
 
-  let html = await proxyFetch(url);
+async function corsProxySearch(query) {
+  let encoded = encodeURIComponent(query.trim());
+  let html = await proxyFetch(BASE_URL + '/search?q=' + encoded);
   let parser = new DOMParser();
   let doc = parser.parseFromString(html, 'text/html');
 
   let results = [];
   let mediaItems = doc.querySelectorAll('div.media');
-  console.log('[Browser] Found', mediaItems.length, 'media items');
 
   for (let media of mediaItems) {
     let coverLink = media.querySelector('a.cover-link');
@@ -123,9 +127,7 @@ async function browserSearch(query) {
   return { results };
 }
 
-async function browserGetPlayInfo(pageUrl) {
-  console.log('[Browser] Fetching play page:', pageUrl);
-
+async function corsProxyGetPlayInfo(pageUrl) {
   let html = await proxyFetch(pageUrl);
   let parser = new DOMParser();
   let doc = parser.parseFromString(html, 'text/html');
@@ -134,29 +136,16 @@ async function browserGetPlayInfo(pageUrl) {
   let mtype = (doc.querySelector('#mtype') || {}).value || '';
   let eToken = (doc.querySelector('#e_token') || {}).value || '';
 
-  if (!currentId || !eToken) {
-    console.warn('[Browser] Missing hidden inputs');
-    return { videos: [] };
-  }
-
-  console.log('[Browser] currentId:', currentId, 'mtype:', mtype, 'eToken length:', eToken.length);
+  if (!currentId || !eToken) return { videos: [] };
 
   let token = computeToken(currentId, eToken);
-  console.log('[Browser] Computed token:', token);
-
   let apiUrl = BASE_URL + '/api/getResN?videoId=' + currentId
     + '&mtype=' + (mtype || '1')
     + '&token=' + token;
-  console.log('[Browser] API URL:', apiUrl);
 
   let apiResponse = await proxyFetch(apiUrl);
-  console.log('[Browser] API response:', apiResponse.substring(0, 200));
-
   let responseJson = JSON.parse(apiResponse);
-  if (responseJson.state !== 1) {
-    console.warn('[Browser] API state:', responseJson.state);
-    return { videos: [] };
-  }
+  if (responseJson.state !== 1) return { videos: [] };
 
   let videos = [];
   let dataObj = responseJson.data;
@@ -164,44 +153,56 @@ async function browserGetPlayInfo(pageUrl) {
     for (let lineItem of dataObj.list) {
       let resDataStr = lineItem.resData || '';
       if (!resDataStr) continue;
-
       try {
         let resArray = JSON.parse(resDataStr);
         for (let resObj of resArray) {
           let urlData = resObj.url || '';
           if (!urlData) continue;
-
-          let entries = urlData.split('#');
-          for (let entry of entries) {
+          for (let entry of urlData.split('#')) {
             let parts = entry.split('$');
             if (parts.length >= 2) {
               let label = parts[0].trim();
               let videoUrl = parts.slice(1).join('$').trim();
               if (videoUrl.toLowerCase().endsWith('.m3u8')) {
-                videos.push({
-                  url: videoUrl,
-                  label: label || ('线路 ' + (videos.length + 1))
-                });
+                videos.push({ url: videoUrl, label: label || ('线路 ' + (videos.length + 1)) });
               }
             }
           }
         }
       } catch (e) {
-        // regex fallback for m3u8 URLs
-        console.warn('[Browser] resData parse failed, regex fallback', e);
         let m3u8Regex = /https?:\/\/[^"'\s,]+?\.m3u8[^"'\s,]*/g;
         let match;
         while ((match = m3u8Regex.exec(resDataStr)) !== null) {
-          let m3u8Url = match[0];
-          if (!videos.some(v => v.url === m3u8Url)) {
-            videos.push({ url: m3u8Url, label: '视频源 ' + (videos.length + 1) });
+          if (!videos.some(v => v.url === match[0])) {
+            videos.push({ url: match[0], label: '视频源 ' + (videos.length + 1) });
           }
         }
       }
     }
   }
-
   return { videos };
+}
+
+async function browserSearch(query) {
+  // Try local proxy first, fall back to CORS proxy
+  try {
+    return await localProxySearch(query);
+  } catch (e1) {
+    console.warn('[Browser] Local proxy unavailable, trying CORS proxy:', e1.message);
+    if (CORS_PROXY_BASE) return await corsProxySearch(query);
+    throw new Error('Local proxy not running. Run: python local-server.py');
+  }
+}
+
+async function browserGetPlayInfo(pageUrl) {
+  // Try local proxy first, fall back to CORS proxy
+  try {
+    return await localProxyGetPlayInfo(pageUrl);
+  } catch (e1) {
+    console.warn('[Browser] Local proxy unavailable, trying CORS proxy:', e1.message);
+    if (CORS_PROXY_BASE) return await corsProxyGetPlayInfo(pageUrl);
+    throw new Error('Local proxy not running. Run: python local-server.py');
+  }
 }
 
 // --- Toast ---
