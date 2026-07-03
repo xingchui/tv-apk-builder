@@ -10,15 +10,21 @@ let resultsContainer = document.getElementById('resultsContainer');
 let emptyState = document.getElementById('emptyState');
 let loadingIndicator = document.getElementById('loadingIndicator');
 let searchScreen = document.getElementById('searchScreen');
+let sourceScreen = document.getElementById('sourceScreen');
 let playerScreen = document.getElementById('playerScreen');
 let videoPlayer = document.getElementById('videoPlayer');
 let backBtn = document.getElementById('backBtn');
+let sourceBackBtn = document.getElementById('sourceBackBtn');
+let sourceTitle = document.getElementById('sourceTitle');
+let sourceList = document.getElementById('sourceList');
+let sourceEmpty = document.getElementById('sourceEmpty');
 let playerTitle = document.getElementById('playerTitle');
 let toast = document.getElementById('toast');
 let hlsInstance = null;
 
 // --- Focus Management ---
 let focusedIndex = -1;
+let focusSourceIndex = -1;
 
 // --- Native Bridge ---
 function bridgeAvailable() {
@@ -307,6 +313,7 @@ function escapeHtml(str) {
 
 // --- Detail / Play ---
 let currentDetailVideos = [];
+let currentDetailTitle = '';
 
 async function openDetail(idx) {
   let item = currentResults[idx];
@@ -344,14 +351,74 @@ async function openDetail(idx) {
     }
 
     currentDetailVideos = data.videos;
-    // Play the first video
-    let first = currentDetailVideos[0];
-    playVideo(first.url, first.label || item.title);
+    currentDetailTitle = item.title;
+    showSourceSelection(currentDetailVideos, currentDetailTitle);
 
   } catch (e) {
     showToast('解析失败: ' + e.message);
   }
   loadingIndicator.classList.add('hidden');
+}
+
+function showSourceSelection(videos, title) {
+  sourceList.innerHTML = '';
+  sourceEmpty.classList.add('hidden');
+
+  sourceTitle.textContent = title || '选择视频源';
+
+  if (videos.length === 0) {
+    sourceEmpty.classList.remove('hidden');
+  } else {
+    videos.forEach((v, idx) => {
+      let item = document.createElement('div');
+      item.className = 'source-item';
+      item.tabIndex = 0;
+      item.dataset.index = idx;
+
+      let icon = '▶';
+      if (v.label && (v.label.includes('国语') || v.label.includes('国'))) icon = '🎙';
+      else if (v.label && v.label.includes('原声')) icon = '🔊';
+      else if (v.label && v.label.includes('粤')) icon = '🎬';
+
+      let label = v.label || '线路 ' + (idx + 1);
+      item.innerHTML = `
+        <span class="source-item-icon">${icon}</span>
+        <span class="source-item-label">${escapeHtml(label)}</span>
+        <span class="source-item-index">${idx + 1} / ${videos.length}</span>
+      `;
+
+      item.addEventListener('click', () => playSelectedSource(idx));
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          playSelectedSource(idx);
+        }
+      });
+
+      sourceList.appendChild(item);
+    });
+  }
+
+  searchScreen.classList.remove('active');
+  sourceScreen.classList.add('active');
+
+  focusSourceIndex = 0;
+  let items = sourceList.querySelectorAll('.source-item');
+  if (items.length > 0) setTimeout(() => items[0].focus(), 100);
+}
+
+function playSelectedSource(idx) {
+  let video = currentDetailVideos[idx];
+  if (!video) return;
+  sourceScreen.classList.remove('active');
+  playVideo(video.url, video.label || currentDetailTitle);
+}
+
+function exitSourceScreen() {
+  sourceScreen.classList.remove('active');
+  searchScreen.classList.add('active');
+  // Refocus the search input or last focused result
+  searchInputEl.focus();
 }
 
 function playVideo(url, title) {
@@ -401,14 +468,20 @@ backBtn.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); exitPlayer(); }
 });
 
+sourceBackBtn.addEventListener('click', exitSourceScreen);
+sourceBackBtn.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); exitSourceScreen(); }
+});
+
 function exitPlayer() {
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
   videoPlayer.pause();
   videoPlayer.src = '';
   playerScreen.classList.remove('active');
-  searchScreen.classList.add('active');
-  // Refocus search
-  searchInputEl.focus();
+  // Go back to source selection if we came from there
+  sourceScreen.classList.add('active');
+  let items = sourceList.querySelectorAll('.source-item');
+  if (items.length > 0) setTimeout(() => items[0].focus(), 100);
 }
 
 // --- Android TV Back Key ---
@@ -417,6 +490,9 @@ document.addEventListener('keydown', (e) => {
     if (playerScreen.classList.contains('active')) {
       e.preventDefault();
       exitPlayer();
+    } else if (sourceScreen.classList.contains('active')) {
+      e.preventDefault();
+      exitSourceScreen();
     } else if (bridgeAvailable()) {
       // On search screen — exit the app
       Android.exitApp();
@@ -466,6 +542,24 @@ document.addEventListener('keydown', (e) => {
     if (newIdx >= cards.length) newIdx = cards.length - 1;
     focusedIndex = newIdx;
     cards[focusedIndex].focus();
+  }
+});
+
+// --- DPad Navigation for Source List ---
+document.addEventListener('keydown', (e) => {
+  if (!sourceScreen.classList.contains('active')) return;
+
+  let items = sourceList.querySelectorAll('.source-item');
+  if (items.length === 0) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    focusSourceIndex = Math.min(focusSourceIndex + 1, items.length - 1);
+    items[focusSourceIndex].focus();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    focusSourceIndex = Math.max(focusSourceIndex - 1, 0);
+    items[focusSourceIndex].focus();
   }
 });
 
