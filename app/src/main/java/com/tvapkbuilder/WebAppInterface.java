@@ -126,12 +126,9 @@ public class WebAppInterface {
             Log.d(TAG, "Found " + results.length() + " results via div.media selectors");
             return wrapper.toString();
 
-        } catch (IOException e) {
-            Log.e(TAG, "Search IO error", e);
-            return errorJson(e);
-        } catch (Exception e) {
-            Log.e(TAG, "Search parse error", e);
-            return errorJson(e);
+        } catch (Throwable t) {
+            Log.e(TAG, "Search error", t);
+            return errorJson(t);
         }
     }
 
@@ -253,12 +250,9 @@ public class WebAppInterface {
             Log.d(TAG, "Found " + videos.length() + " video sources via API");
             return wrapper.toString();
 
-        } catch (IOException e) {
-            Log.e(TAG, "getPlayInfo IO error", e);
-            return errorJson(e);
-        } catch (Exception e) {
-            Log.e(TAG, "getPlayInfo parse error", e);
-            return errorJson(e);
+        } catch (Throwable t) {
+            Log.e(TAG, "getPlayInfo error", t);
+            return errorJson(t);
         }
     }
 

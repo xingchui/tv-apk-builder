@@ -1,0 +1,7 @@
+{
+  "name": "test-scraping",
+  "type": "module",
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}

@@ -39,6 +39,171 @@ function nativeGetPlayInfo(url) {
   return null;
 }
 
+// --- CORS Proxy Config ---
+// Used when native bridge is unavailable (browser testing).
+// Set to an empty string to bypass and fetch directly.
+const CORS_PROXY_BASE = 'https://api.allorigins.win/raw?url=';
+
+async function proxyFetch(url) {
+  if (CORS_PROXY_BASE) {
+    const resp = await fetch(CORS_PROXY_BASE + encodeURIComponent(url));
+    if (!resp.ok) throw new Error('Proxy fetch failed: ' + resp.status);
+    return await resp.text();
+  }
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Fetch failed: ' + resp.status);
+  return await resp.text();
+}
+
+// --- Browser Fallback (uses fetch + DOMParser) ---
+
+const BASE_URL = 'https://www.ikanbot.com';
+
+function computeToken(currentId, eToken) {
+  // Same algorithm as WebAppInterface.computeToken()
+  let suffix = currentId.slice(-4);
+  let result = '';
+  let remaining = eToken;
+  for (let i = 0; i < suffix.length; i++) {
+    let digit = parseInt(suffix[i], 10);
+    let offset = (digit % 3) + 1;
+    if (offset + 8 > remaining.length) break;
+    result += remaining.substring(offset, offset + 8);
+    remaining = remaining.substring(offset + 8);
+  }
+  return result;
+}
+
+async function browserSearch(query) {
+  let encoded = encodeURIComponent(query.trim());
+  let url = BASE_URL + '/search?q=' + encoded;
+  console.log('[Browser] Searching:', url);
+
+  let html = await proxyFetch(url);
+  let parser = new DOMParser();
+  let doc = parser.parseFromString(html, 'text/html');
+
+  let results = [];
+  let mediaItems = doc.querySelectorAll('div.media');
+  console.log('[Browser] Found', mediaItems.length, 'media items');
+
+  for (let media of mediaItems) {
+    let coverLink = media.querySelector('a.cover-link');
+    if (!coverLink) continue;
+    let href = coverLink.getAttribute('href') || '';
+    if (!href) continue;
+    let fullUrl = href.startsWith('http') ? href : BASE_URL + href;
+
+    let titleEl = media.querySelector('a.title-text');
+    let title = titleEl ? titleEl.textContent.trim() : '';
+    if (!title) continue;
+    if (title.length > 100) title = title.substring(0, 100);
+
+    let thumbnail = '';
+    let img = media.querySelector('img.media-pic.lazy');
+    if (img) {
+      thumbnail = img.getAttribute('data-src') || img.getAttribute('src') || '';
+      if (thumbnail && !thumbnail.startsWith('http')) {
+        if (thumbnail.startsWith('//')) {
+          thumbnail = 'https:' + thumbnail;
+        } else if (!thumbnail.startsWith('data:')) {
+          thumbnail = 'https:' + thumbnail;
+        }
+      }
+    }
+
+    let episodes = '';
+    let epEl = media.querySelector('span.label');
+    if (epEl) episodes = epEl.textContent.trim();
+
+    results.push({ title, url: fullUrl, thumbnail, episodes });
+    if (results.length >= 20) break;
+  }
+
+  return { results };
+}
+
+async function browserGetPlayInfo(pageUrl) {
+  console.log('[Browser] Fetching play page:', pageUrl);
+
+  let html = await proxyFetch(pageUrl);
+  let parser = new DOMParser();
+  let doc = parser.parseFromString(html, 'text/html');
+
+  let currentId = (doc.querySelector('#current_id') || {}).value || '';
+  let mtype = (doc.querySelector('#mtype') || {}).value || '';
+  let eToken = (doc.querySelector('#e_token') || {}).value || '';
+
+  if (!currentId || !eToken) {
+    console.warn('[Browser] Missing hidden inputs');
+    return { videos: [] };
+  }
+
+  console.log('[Browser] currentId:', currentId, 'mtype:', mtype, 'eToken length:', eToken.length);
+
+  let token = computeToken(currentId, eToken);
+  console.log('[Browser] Computed token:', token);
+
+  let apiUrl = BASE_URL + '/api/getResN?videoId=' + currentId
+    + '&mtype=' + (mtype || '1')
+    + '&token=' + token;
+  console.log('[Browser] API URL:', apiUrl);
+
+  let apiResponse = await proxyFetch(apiUrl);
+  console.log('[Browser] API response:', apiResponse.substring(0, 200));
+
+  let responseJson = JSON.parse(apiResponse);
+  if (responseJson.state !== 1) {
+    console.warn('[Browser] API state:', responseJson.state);
+    return { videos: [] };
+  }
+
+  let videos = [];
+  let dataObj = responseJson.data;
+  if (dataObj && dataObj.list) {
+    for (let lineItem of dataObj.list) {
+      let resDataStr = lineItem.resData || '';
+      if (!resDataStr) continue;
+
+      try {
+        let resArray = JSON.parse(resDataStr);
+        for (let resObj of resArray) {
+          let urlData = resObj.url || '';
+          if (!urlData) continue;
+
+          let entries = urlData.split('#');
+          for (let entry of entries) {
+            let parts = entry.split('$');
+            if (parts.length >= 2) {
+              let label = parts[0].trim();
+              let videoUrl = parts.slice(1).join('$').trim();
+              if (videoUrl.toLowerCase().endsWith('.m3u8')) {
+                videos.push({
+                  url: videoUrl,
+                  label: label || ('线路 ' + (videos.length + 1))
+                });
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // regex fallback for m3u8 URLs
+        console.warn('[Browser] resData parse failed, regex fallback', e);
+        let m3u8Regex = /https?:\/\/[^"'\s,]+?\.m3u8[^"'\s,]*/g;
+        let match;
+        while ((match = m3u8Regex.exec(resDataStr)) !== null) {
+          let m3u8Url = match[0];
+          if (!videos.some(v => v.url === m3u8Url)) {
+            videos.push({ url: m3u8Url, label: '视频源 ' + (videos.length + 1) });
+          }
+        }
+      }
+    }
+  }
+
+  return { videos };
+}
+
 // --- Toast ---
 let toastTimer = null;
 function showToast(msg) {
@@ -59,14 +224,18 @@ async function performSearch() {
   resultsContainer.classList.remove('has-results');
 
   try {
-    let raw = nativeSearch(query);
     let data;
-    if (raw) {
-      data = JSON.parse(raw);
+    if (bridgeAvailable()) {
+      let raw = nativeSearch(query);
+      if (raw) {
+        data = JSON.parse(raw);
+      } else {
+        showToast('Native 搜索返回空');
+        loadingIndicator.classList.add('hidden');
+        return;
+      }
     } else {
-      showToast('无法连接 native 层');
-      loadingIndicator.classList.add('hidden');
-      return;
+      data = await browserSearch(query);
     }
 
     if (data.error) {
@@ -138,7 +307,7 @@ function escapeHtml(str) {
 // --- Detail / Play ---
 let currentDetailVideos = [];
 
-function openDetail(idx) {
+async function openDetail(idx) {
   let item = currentResults[idx];
   if (!item) return;
 
@@ -148,10 +317,19 @@ function openDetail(idx) {
   loadingIndicator.classList.remove('hidden');
 
   try {
-    let raw = nativeGetPlayInfo(detailUrl);
-    if (!raw) { showToast('获取播放信息失败'); loadingIndicator.classList.add('hidden'); return; }
-
-    let data = JSON.parse(raw);
+    let data;
+    if (bridgeAvailable()) {
+      let raw = nativeGetPlayInfo(detailUrl);
+      if (raw) {
+        data = JSON.parse(raw);
+      } else {
+        showToast('Native 获取信息返回空');
+        loadingIndicator.classList.add('hidden');
+        return;
+      }
+    } else {
+      data = await browserGetPlayInfo(detailUrl);
+    }
 
     if (data.error) {
       showToast('获取播放信息失败: ' + data.error);
