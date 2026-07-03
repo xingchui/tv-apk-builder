@@ -16,6 +16,7 @@ let videoPlayer = document.getElementById('videoPlayer');
 let backBtn = document.getElementById('backBtn');
 let sourceBackBtn = document.getElementById('sourceBackBtn');
 let sourceTitle = document.getElementById('sourceTitle');
+let sourceCount = document.getElementById('sourceCount');
 let sourceList = document.getElementById('sourceList');
 let sourceEmpty = document.getElementById('sourceEmpty');
 let playerTitle = document.getElementById('playerTitle');
@@ -365,6 +366,7 @@ function showSourceSelection(videos, title) {
   sourceEmpty.classList.add('hidden');
 
   sourceTitle.textContent = title || '选择视频源';
+  sourceCount.textContent = videos.length + ' 个线路';
 
   if (videos.length === 0) {
     sourceEmpty.classList.remove('hidden');

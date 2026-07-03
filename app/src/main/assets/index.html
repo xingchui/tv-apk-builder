@@ -30,8 +30,18 @@
   <!-- Source Selection Screen -->
   <div id="sourceScreen" class="screen">
     <div class="source-header">
-      <button id="sourceBackBtn" tabindex="0" class="back-button">← 返回</button>
-      <span id="sourceTitle" class="source-title"></span>
+      <button id="sourceBackBtn" tabindex="0" class="back-button source-back-btn">
+        <span class="back-arrow">←</span>
+        <span class="back-label">返回搜索</span>
+      </button>
+      <div class="source-header-info">
+        <span id="sourceTitle" class="source-title"></span>
+        <span id="sourceCount" class="source-count"></span>
+      </div>
+    </div>
+    <div class="source-prompt">
+      <span class="prompt-text">请选择播放线路</span>
+      <span class="prompt-hint">按 ← 返回搜索结果</span>
     </div>
     <div id="sourceList" class="source-list"></div>
     <div id="sourceEmpty" class="empty-state">
