@@ -76,14 +76,14 @@ public class WebAppInterface {
             Elements mediaItems = doc.select("div.media");
             for (Element media : mediaItems) {
                 // Extract play page link from cover-link
-                Element coverLink = media.selectFirst("a.cover-link");
+                Element coverLink = media.select("a.cover-link").first();
                 if (coverLink == null) continue;
                 String href = coverLink.attr("href");
                 if (href.isEmpty()) continue;
                 String fullUrl = href.startsWith("http") ? href : BASE_URL + href;
 
                 // Extract title from title-text
-                Element titleEl = media.selectFirst("a.title-text");
+                Element titleEl = media.select("a.title-text").first();
                 String title = titleEl != null ? titleEl.text().trim() : "";
                 if (title.isEmpty()) continue;
                 // Truncate overly long titles
@@ -91,7 +91,7 @@ public class WebAppInterface {
 
                 // Extract thumbnail from lazy-loaded image
                 String thumbnail = "";
-                Element img = media.selectFirst("img.media-pic.lazy");
+                Element img = media.select("img.media-pic.lazy").first();
                 if (img != null) {
                     thumbnail = img.attr("data-src");
                     if (thumbnail.isEmpty()) thumbnail = img.attr("src");
@@ -106,7 +106,7 @@ public class WebAppInterface {
 
                 // Extract episode count from label
                 String episodes = "";
-                Element epEl = media.selectFirst("span.label");
+                Element epEl = media.select("span.label").first();
                 if (epEl != null) {
                     episodes = epEl.text().trim();
                 }
@@ -152,9 +152,12 @@ public class WebAppInterface {
                     .followRedirects(true)
                     .get();
 
-            String currentId = doc.select("#current_id").val();
-            String mtype = doc.select("#mtype").val();
-            String eToken = doc.select("#e_token").val();
+            Element currentIdEl = doc.select("#current_id").first();
+            String currentId = currentIdEl != null ? currentIdEl.val() : "";
+            Element mtypeEl = doc.select("#mtype").first();
+            String mtype = mtypeEl != null ? mtypeEl.val() : "";
+            Element eTokenEl = doc.select("#e_token").first();
+            String eToken = eTokenEl != null ? eTokenEl.val() : "";
 
             if (currentId.isEmpty() || eToken.isEmpty()) {
                 Log.e(TAG, "Missing hidden inputs: currentId=" + currentId + ", eToken=" + eToken);

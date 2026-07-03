@@ -1,0 +1,6 @@
+- generic [ref=e1]:
+  - text: ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放 ▶ 播放
+  - generic [ref=e135]:
+    - button "← 返回" [active] [ref=e136] [cursor=pointer]
+    - generic [ref=e137]: HD中字
+  - generic: 未找到视频源

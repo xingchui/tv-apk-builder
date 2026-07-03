@@ -1,0 +1,8 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "TV Search" [level=1] [ref=e4]
+    - generic [ref=e5]:
+      - generic [ref=e6]: 🔍
+      - textbox "搜索影片名称…" [active] [ref=e7]
+      - button "搜索" [ref=e8] [cursor=pointer]
+  - paragraph [ref=e11]: 输入关键词搜索影片

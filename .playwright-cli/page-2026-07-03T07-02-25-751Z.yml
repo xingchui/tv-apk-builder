@@ -1,0 +1,90 @@
+- generic [ref=e1]:
+  - generic [ref=e58]:
+    - generic [ref=e59]:
+      - button "← 返回搜索" [ref=e60] [cursor=pointer]:
+        - generic [ref=e61]: ←
+        - generic [ref=e62]: 返回搜索
+      - generic [ref=e63]:
+        - generic [ref=e64]: 验收测试 2016
+        - generic [ref=e65]: 15 个线路
+    - generic [ref=e66]:
+      - generic [ref=e67]: 请选择播放线路
+      - generic [ref=e68]: 按 ← 返回搜索结果
+    - generic [ref=e69]:
+      - generic [active] [ref=e70] [cursor=pointer]:
+        - generic [ref=e71]: ▶
+        - generic [ref=e72]: HD中字
+        - generic [ref=e73]: 1 / 15
+        - text: ▶ 播放
+      - generic [ref=e74] [cursor=pointer]:
+        - generic [ref=e75]: ▶
+        - generic [ref=e76]: HD中字
+        - generic [ref=e77]: 2 / 15
+        - text: ▶ 播放
+      - generic [ref=e78] [cursor=pointer]:
+        - generic [ref=e79]: ▶
+        - generic [ref=e80]: HD中字
+        - generic [ref=e81]: 3 / 15
+        - text: ▶ 播放
+      - generic [ref=e82] [cursor=pointer]:
+        - generic [ref=e83]: ▶
+        - generic [ref=e84]: HD中字
+        - generic [ref=e85]: 4 / 15
+        - text: ▶ 播放
+      - generic [ref=e86] [cursor=pointer]:
+        - generic [ref=e87]: ▶
+        - generic [ref=e88]: HD中字
+        - generic [ref=e89]: 5 / 15
+        - text: ▶ 播放
+      - generic [ref=e90] [cursor=pointer]:
+        - generic [ref=e91]: ▶
+        - generic [ref=e92]: HD中字
+        - generic [ref=e93]: 6 / 15
+        - text: ▶ 播放
+      - generic [ref=e94] [cursor=pointer]:
+        - generic [ref=e95]: ▶
+        - generic [ref=e96]: HD中字
+        - generic [ref=e97]: 7 / 15
+        - text: ▶ 播放
+      - generic [ref=e98] [cursor=pointer]:
+        - generic [ref=e99]: ▶
+        - generic [ref=e100]: HD中字
+        - generic [ref=e101]: 8 / 15
+        - text: ▶ 播放
+      - generic [ref=e102] [cursor=pointer]:
+        - generic [ref=e103]: ▶
+        - generic [ref=e104]: HD中字
+        - generic [ref=e105]: 9 / 15
+        - text: ▶ 播放
+      - generic [ref=e106] [cursor=pointer]:
+        - generic [ref=e107]: ▶
+        - generic [ref=e108]: HD中字
+        - generic [ref=e109]: 10 / 15
+        - text: ▶ 播放
+      - generic [ref=e110] [cursor=pointer]:
+        - generic [ref=e111]: ▶
+        - generic [ref=e112]: HD中字
+        - generic [ref=e113]: 11 / 15
+        - text: ▶ 播放
+      - generic [ref=e114] [cursor=pointer]:
+        - generic [ref=e115]: ▶
+        - generic [ref=e116]: HD中字
+        - generic [ref=e117]: 12 / 15
+        - text: ▶ 播放
+      - generic [ref=e118] [cursor=pointer]:
+        - generic [ref=e119]: ▶
+        - generic [ref=e120]: HD中字
+        - generic [ref=e121]: 13 / 15
+        - text: ▶ 播放
+      - generic [ref=e122] [cursor=pointer]:
+        - generic [ref=e123]: ▶
+        - generic [ref=e124]: HD中字
+        - generic [ref=e125]: 14 / 15
+        - text: ▶ 播放
+      - generic [ref=e126] [cursor=pointer]:
+        - generic [ref=e127]: ▶
+        - generic [ref=e128]: HD中字
+        - generic [ref=e129]: 15 / 15
+        - text: ▶ 播放
+    - paragraph [ref=e131]: 未找到可播放的视频源
+  - generic: 未找到视频源
