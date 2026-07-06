@@ -2,19 +2,15 @@ package com.tvapkbuilder;
 
 import android.os.Bundle;
 import android.view.KeyEvent;
-import android.view.View;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.widget.FrameLayout;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
-    private FrameLayout videoContainer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -27,13 +23,16 @@ public class MainActivity extends AppCompatActivity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setAllowFileAccess(true);
-        settings.setAllowContentAccess(true);
+        // File access via JavaScript is not needed — app loads from bundled assets
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        // Block mixed content (HTTPS page loading HTTP resources).
+        // HLS video streams fetched by HLS.js / native video element are not affected.
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setUserAgentString(
             "Mozilla/5.0 (Linux; Android 14; Android TV) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -46,14 +45,8 @@ public class MainActivity extends AppCompatActivity {
             "Android"
         );
 
-        // --- Fullscreen video support ---
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onShowCustomView(View view, CustomViewCallback callback) {
-                // Fullscreen video handling (for future ExoPlayer integration)
-                super.onShowCustomView(view, callback);
-            }
-        });
+        // Fullscreen video support (placeholder for future ExoPlayer integration)
+        webView.setWebChromeClient(new WebChromeClient());
 
         // --- Load web app from assets ---
         webView.loadUrl("file:///android_asset/index.html");
@@ -72,12 +65,7 @@ public class MainActivity extends AppCompatActivity {
         return super.onKeyDown(keyCode, event);
     }
 
-    @Override
-    public void onBackPressed() {
-        // Forward to web app
-        webView.evaluateJavascript(
-            "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Back'}));",
-            null
-        );
-    }
+    // onBackPressed intentionally omitted — KEYCODE_BACK is handled by onKeyDown above.
+    // Using OnBackInvokedCallback (API 33+) is unnecessary for Android TV where
+    // the remote always dispatches key events.
 }

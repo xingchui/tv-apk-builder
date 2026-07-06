@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext (HTTP) to ikanbot.com and video CDN domains -->
+    <!-- Allow cleartext (HTTP) to ikanbot.com and video CDN domains.
+         If HLS video streams on HTTP fail, add the CDN domain here:
+           <domain includeSubdomains="true">your-cdn-domain.com</domain>  -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">ikanbot.com</domain>
         <domain includeSubdomains="true">ikanbot.tv</domain>

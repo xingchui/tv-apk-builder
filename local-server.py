@@ -54,6 +54,15 @@ def fetch(url):
         return resp.read().decode('utf-8', errors='replace')
 
 
+def _re_first(patterns, text, group=1, flags=0):
+    """Try each pattern and return the first match's captured group, or None."""
+    for pattern in patterns:
+        m = re.search(pattern, text, flags)
+        if m:
+            return m.group(group)
+    return None
+
+
 # ---- Search ----
 # Regex-based extraction — ikanbot.com search HTML is consistent enough.
 
@@ -70,39 +79,42 @@ def search(query):
             break
 
         # cover-link href (order-independent: class= may come before or after href=)
-        m = (re.search(r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*cover-link[^"]*"', block)
-             or re.search(r'<a[^>]*class="[^"]*cover-link[^"]*"[^>]*href="([^"]*)"', block))
-        if not m:
-            continue
-        href = m.group(1)
+        href = _re_first([
+            r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*cover-link[^"]*"',
+            r'<a[^>]*class="[^"]*cover-link[^"]*"[^>]*href="([^"]*)"',
+        ], block)
         if not href:
             continue
 
         # title-text (order-independent)
-        m = (re.search(r'<a[^>]*class="[^"]*title-text[^"]*"[^>]*>([^<]*)</a>', block)
-             or re.search(r'<a[^>]*href="[^"]*"[^>]*class="[^"]*title-text[^"]*"[^>]*>([^<]*)</a>', block))
-        if not m:
-            continue
-        title = m.group(1).strip()
+        title = _re_first([
+            r'<a[^>]*class="[^"]*title-text[^"]*"[^>]*>([^<]*)</a>',
+            r'<a[^>]*href="[^"]*"[^>]*class="[^"]*title-text[^"]*"[^>]*>([^<]*)</a>',
+        ], block)
         if not title:
             continue
+        title = title.strip()
         if len(title) > 100:
             title = title[:100]
 
         # thumbnail (data-src first, then src — order-independent on class)
-        m = (re.search(r'<img[^>]*data-src="([^"]*)"[^>]*class="[^"]*media-pic[^"]*lazy[^"]*"', block)
-             or re.search(r'<img[^>]*class="[^"]*media-pic[^"]*lazy[^"]*"[^>]*data-src="([^"]*)"', block))
-        thumbnail = m.group(1) if m else ''
+        thumbnail = _re_first([
+            r'<img[^>]*data-src="([^"]*)"[^>]*class="[^"]*media-pic[^"]*lazy[^"]*"',
+            r'<img[^>]*class="[^"]*media-pic[^"]*lazy[^"]*"[^>]*data-src="([^"]*)"',
+        ], block)
         if not thumbnail:
-            m = (re.search(r'<img[^>]*src="([^"]*)"[^>]*class="[^"]*media-pic[^"]*lazy[^"]*"', block)
-                 or re.search(r'<img[^>]*class="[^"]*media-pic[^"]*lazy[^"]*"[^>]*src="([^"]*)"', block))
-            thumbnail = m.group(1) if m else ''
+            thumbnail = _re_first([
+                r'<img[^>]*src="([^"]*)"[^>]*class="[^"]*media-pic[^"]*lazy[^"]*"',
+                r'<img[^>]*class="[^"]*media-pic[^"]*lazy[^"]*"[^>]*src="([^"]*)"',
+            ], block) or ''
         thumbnail = normalize_thumbnail(thumbnail)
 
         # episodes label (order-independent on class)
-        m = (re.search(r'<span[^>]*class="[^"]*label[^"]*"[^>]*>([^<]*)</span>', block)
-             or re.search(r'<span[^>]*class="label"[^>]*>([^<]*)</span>', block))
-        episodes = m.group(1).strip() if m else ''
+        episodes = _re_first([
+            r'<span[^>]*class="[^"]*label[^"]*"[^>]*>([^<]*)</span>',
+            r'<span[^>]*class="label"[^>]*>([^<]*)</span>',
+        ], block)
+        episodes = (episodes or '').strip()
 
         full_url = href if href.startswith('http') else BASE_URL + href
         results.append({

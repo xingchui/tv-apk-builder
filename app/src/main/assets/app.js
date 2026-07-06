@@ -53,11 +53,9 @@ function nativeGetPlayInfo(url) {
   return null;
 }
 
-// --- Local Proxy Config ---
-// When native bridge is unavailable (browser testing), the app tries:
-//   1. Local proxy at LOCAL_PROXY (recommended — run: node scraping-proxy.mjs)
-//   2. External CORS proxy as fallback
-const CORS_PROXY_BASE = ''; // Optional CORS proxy URL, e.g. 'https://api.allorigins.win/raw?url='
+// --- Local Proxy ---
+// When native bridge is unavailable (browser testing), runs queries through
+// the local Python server: python local-server.py
 
 async function localProxySearch(query) {
   let resp = await fetch('/api/search?q=' + encodeURIComponent(query));
@@ -71,11 +69,10 @@ async function localProxyGetPlayInfo(pageUrl) {
   return await resp.json();
 }
 
-// --- External CORS Proxy Fallback (DOMParser-based) ---
-
 const BASE_URL = 'https://www.ikanbot.com';
 
 function computeToken(currentId, eToken) {
+  // Token algorithm: suffix[-4:], each char digit%3+1 offset, take 8 chars, repeat
   let suffix = currentId.slice(-4);
   let result = '';
   let remaining = eToken;
@@ -89,142 +86,6 @@ function computeToken(currentId, eToken) {
   return result;
 }
 
-async function proxyFetch(url) {
-  if (!CORS_PROXY_BASE) throw new Error('No CORS proxy configured');
-  const resp = await fetch(CORS_PROXY_BASE + encodeURIComponent(url));
-  if (!resp.ok) throw new Error('Proxy fetch failed: ' + resp.status);
-  return await resp.text();
-}
-
-async function corsProxySearch(query) {
-  let encoded = encodeURIComponent(query.trim());
-  let html = await proxyFetch(BASE_URL + '/search?q=' + encoded);
-  let parser = new DOMParser();
-  let doc = parser.parseFromString(html, 'text/html');
-
-  let results = [];
-  let mediaItems = doc.querySelectorAll('div.media');
-
-  for (let media of mediaItems) {
-    let coverLink = media.querySelector('a.cover-link');
-    if (!coverLink) continue;
-    let href = coverLink.getAttribute('href') || '';
-    if (!href) continue;
-    let fullUrl = href.startsWith('http') ? href : BASE_URL + href;
-
-    let titleEl = media.querySelector('a.title-text');
-    let title = titleEl ? titleEl.textContent.trim() : '';
-    if (!title) continue;
-    if (title.length > 100) title = title.substring(0, 100);
-
-    let thumbnail = '';
-    let img = media.querySelector('img.media-pic.lazy');
-    if (img) {
-      thumbnail = img.getAttribute('data-src') || img.getAttribute('src') || '';
-      if (thumbnail && !thumbnail.startsWith('http')) {
-        if (thumbnail.startsWith('//')) {
-          thumbnail = 'https:' + thumbnail;
-        } else if (!thumbnail.startsWith('data:')) {
-          thumbnail = 'https:' + thumbnail;
-        }
-      }
-    }
-
-    let episodes = '';
-    let epEl = media.querySelector('span.label');
-    if (epEl) episodes = epEl.textContent.trim();
-
-    results.push({ title, url: fullUrl, thumbnail, episodes });
-    if (results.length >= 20) break;
-  }
-
-  return { results };
-}
-
-async function corsProxyGetPlayInfo(pageUrl) {
-  let html = await proxyFetch(pageUrl);
-  let parser = new DOMParser();
-  let doc = parser.parseFromString(html, 'text/html');
-
-  let currentId = (doc.querySelector('#current_id') || {}).value || '';
-  let mtype = (doc.querySelector('#mtype') || {}).value || '';
-  let eToken = (doc.querySelector('#e_token') || {}).value || '';
-
-  if (!currentId || !eToken) return { type: 'movie', lines: [] };
-
-  let token = computeToken(currentId, eToken);
-  let apiUrl = BASE_URL + '/api/getResN?videoId=' + currentId
-    + '&mtype=' + (mtype || '1')
-    + '&token=' + token;
-
-  let apiResponse = await proxyFetch(apiUrl);
-  let responseJson = JSON.parse(apiResponse);
-  if (responseJson.state !== 1) return { type: 'movie', lines: [] };
-
-  let mediaType = mtype === '2' ? 'tv' : 'movie';
-  let lines = [];
-  let dataObj = responseJson.data;
-  if (dataObj && dataObj.list) {
-    for (let lineIdx = 0; lineIdx < dataObj.list.length; lineIdx++) {
-      let lineItem = dataObj.list[lineIdx];
-      let resDataStr = lineItem.resData || '';
-      if (!resDataStr) continue;
-      let items = [];
-      try {
-        let resArray = JSON.parse(resDataStr);
-        for (let resObj of resArray) {
-          let urlData = resObj.url || '';
-          if (!urlData) continue;
-          for (let entry of urlData.split('#')) {
-            let parts = entry.split('$');
-            if (parts.length >= 2) {
-              let label = parts[0].trim();
-              let videoUrl = parts.slice(1).join('$').trim();
-              if (videoUrl.toLowerCase().endsWith('.m3u8')) {
-                items.push({ url: videoUrl, label: label });
-              }
-            }
-          }
-        }
-      } catch (e) {
-        let m3u8Regex = /https?:\/\/[^"'\s,]+?\.m3u8[^"'\s,]*/g;
-        let match;
-        while ((match = m3u8Regex.exec(resDataStr)) !== null) {
-          if (!items.some(v => v.url === match[0])) {
-            items.push({ url: match[0], label: '视频源 ' + (items.length + 1) });
-          }
-        }
-      }
-      if (items.length > 0) {
-        lines.push({ name: '线路' + (lineIdx + 1), items: items });
-      }
-    }
-  }
-  return { type: mediaType, lines: lines };
-}
-
-async function browserSearch(query) {
-  // Try local proxy first, fall back to CORS proxy
-  try {
-    return await localProxySearch(query);
-  } catch (e1) {
-    console.warn('[Browser] Local proxy unavailable, trying CORS proxy:', e1.message);
-    if (CORS_PROXY_BASE) return await corsProxySearch(query);
-    throw new Error('Local proxy not running. Run: python local-server.py');
-  }
-}
-
-async function browserGetPlayInfo(pageUrl) {
-  // Try local proxy first, fall back to CORS proxy
-  try {
-    return await localProxyGetPlayInfo(pageUrl);
-  } catch (e1) {
-    console.warn('[Browser] Local proxy unavailable, trying CORS proxy:', e1.message);
-    if (CORS_PROXY_BASE) return await corsProxyGetPlayInfo(pageUrl);
-    throw new Error('Local proxy not running. Run: python local-server.py');
-  }
-}
-
 // --- Toast ---
 let toastTimer = null;
 function showToast(msg) {
@@ -235,10 +96,14 @@ function showToast(msg) {
 }
 
 // --- Search ---
+let searchInProgress = false;
+
 async function performSearch() {
+  if (searchInProgress) return;
   let query = searchInputEl.value.trim();
   if (!query) { showToast('请输入搜索关键词'); return; }
 
+  searchInProgress = true;
   emptyState.classList.add('hidden');
   loadingIndicator.classList.remove('hidden');
   resultsContainer.innerHTML = '';
@@ -252,7 +117,6 @@ async function performSearch() {
         data = JSON.parse(raw);
       } else {
         showToast('Native 搜索返回空');
-        loadingIndicator.classList.add('hidden');
         return;
       }
     } else {
@@ -261,13 +125,11 @@ async function performSearch() {
 
     if (data.error) {
       showToast('搜索失败: ' + data.error);
-      loadingIndicator.classList.add('hidden');
       return;
     }
     if (!data || !data.results || data.results.length === 0) {
       emptyState.classList.remove('hidden');
       emptyState.innerHTML = '<p>未找到结果</p>';
-      loadingIndicator.classList.add('hidden');
       return;
     }
 
@@ -275,8 +137,10 @@ async function performSearch() {
     renderResults(currentResults);
   } catch (e) {
     showToast('搜索失败: ' + e.message);
+  } finally {
+    loadingIndicator.classList.add('hidden');
+    searchInProgress = false;
   }
-  loadingIndicator.classList.add('hidden');
 }
 
 function renderResults(results) {
@@ -466,7 +330,7 @@ function renderEpisodeList(line) {
       <span class="source-item-label">${escapeHtml(item.label)}</span>
       <span class="source-item-index">${i + 1} / ${line.items.length}</span>
     `;
-    let playTitle = currentDetailTitle + ' - ' + (currentDetailData.lines[currentLineIndex] || {}).name + ' ' + item.label;
+    let playTitle = currentDetailTitle + ' - ' + (line ? line.name : '未知线路') + ' ' + item.label;
     el.addEventListener('click', () => playVideo(item.url, playTitle));
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playVideo(item.url, playTitle); }
@@ -476,6 +340,10 @@ function renderEpisodeList(line) {
 }
 
 function selectLine(lineIdx) {
+  if (!currentDetailData || !currentDetailData.lines || lineIdx < 0 || lineIdx >= currentDetailData.lines.length) {
+    console.warn('[selectLine] Invalid line index:', lineIdx, '(total lines:', (currentDetailData ? currentDetailData.lines.length : 0) + ')');
+    return;
+  }
   currentLineIndex = lineIdx;
   let line = currentDetailData && currentDetailData.lines ? currentDetailData.lines[lineIdx] : null;
   if (line) {
@@ -506,15 +374,21 @@ function formatTime(t) {
   return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
+let updateTimeRaf = null;
+
 function updatePlayerTime() {
-  let cur = document.getElementById('ctrlCurrentTime');
-  let dur = document.getElementById('ctrlDuration');
-  let fill = document.getElementById('ctrlProgressFill');
-  if (!cur || !dur || !fill) return;
-  cur.textContent = formatTime(videoPlayer.currentTime);
-  dur.textContent = formatTime(videoPlayer.duration || 0);
-  let pct = videoPlayer.duration ? ((videoPlayer.currentTime / videoPlayer.duration) * 100) : 0;
-  fill.style.width = Math.min(pct, 100) + '%';
+  if (updateTimeRaf) return;
+  updateTimeRaf = requestAnimationFrame(() => {
+    updateTimeRaf = null;
+    let cur = document.getElementById('ctrlCurrentTime');
+    let dur = document.getElementById('ctrlDuration');
+    let fill = document.getElementById('ctrlProgressFill');
+    if (!cur || !dur || !fill) return;
+    cur.textContent = formatTime(videoPlayer.currentTime);
+    dur.textContent = formatTime(videoPlayer.duration || 0);
+    let pct = videoPlayer.duration ? ((videoPlayer.currentTime / videoPlayer.duration) * 100) : 0;
+    fill.style.width = Math.min(pct, 100) + '%';
+  });
 }
 
 function showPlayerControls() {
@@ -604,6 +478,7 @@ function exitPlayer() {
   videoPlayer.pause();
   videoPlayer.src = '';
   videoPlayer.removeEventListener('timeupdate', updatePlayerTime);
+  if (updateTimeRaf) { cancelAnimationFrame(updateTimeRaf); updateTimeRaf = null; }
   playerScreen.classList.remove('active');
   // Hide custom controls
   let ctrl = document.getElementById('playerControls');
