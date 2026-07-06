@@ -133,23 +133,27 @@ def get_play_info(page_url):
     if m:
         e_token = m.group(1)
 
+    media_type = 'tv' if mtype == '2' else 'movie'
+
     if not current_id or not e_token:
-        return {'videos': []}
+        return {'type': media_type, 'lines': []}
 
     token = compute_token(current_id, e_token)
     api_text = fetch(f'{BASE_URL}/api/getResN?videoId={current_id}&mtype={mtype or "1"}&token={token}')
 
     api_json = json.loads(api_text)
     if api_json.get('state') != 1:
-        return {'videos': []}
+        return {'type': media_type, 'lines': []}
 
-    videos = []
+    lines = []
+
     data_obj = api_json.get('data')
     if data_obj and isinstance(data_obj.get('list'), list):
-        for line_item in data_obj['list']:
+        for line_idx, line_item in enumerate(data_obj['list']):
             res_data_str = line_item.get('resData', '') or ''
             if not res_data_str:
                 continue
+            items = []
             try:
                 res_array = json.loads(res_data_str)
                 for res_obj in res_array:
@@ -161,21 +165,24 @@ def get_play_info(page_url):
                         if len(parts) >= 2:
                             label = parts[0].strip()
                             video_url = parts[1].strip()
-                            if video_url.lower().endswith('.m3u8'):
-                                videos.append({
-                                    'url': video_url,
-                                    'label': label or f'线路 {len(videos) + 1}',
-                                })
+                            if '.m3u8' in video_url.lower() or '.mp4' in video_url.lower():
+                                items.append({'url': video_url, 'label': label})
             except json.JSONDecodeError:
                 for m3u8_match in re.finditer(r'https?://[^"\'\\s,]+?\.m3u8[^"\'\\s,]*', res_data_str):
                     m3u8_url = m3u8_match.group(0)
-                    if not any(v['url'] == m3u8_url for v in videos):
-                        videos.append({
-                            'url': m3u8_url,
-                            'label': f'视频源 {len(videos) + 1}',
-                        })
+                    if not any(v['url'] == m3u8_url for v in items):
+                        items.append({'url': m3u8_url, 'label': f'视频源 {len(items) + 1}'})
 
-    return {'videos': videos}
+            if items:
+                lines.append({
+                    'name': f'线路{line_idx + 1}',
+                    'items': items,
+                })
+                print(f'[get_play_info] Line {line_idx + 1}: {len(items)} items', flush=True)
+
+    total_all = sum(len(l['items']) for l in lines)
+    print(f'[get_play_info] Total: {total_all} items across {len(lines)} lines (type={media_type})', flush=True)
+    return {'type': media_type, 'lines': lines}
 
 
 class CombinedHandler(http.server.SimpleHTTPRequestHandler):

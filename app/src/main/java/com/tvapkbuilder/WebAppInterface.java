@@ -139,7 +139,7 @@ public class WebAppInterface {
     @JavascriptInterface
     public String getPlayInfo(String pageUrl) {
         if (pageUrl == null || pageUrl.isEmpty()) {
-            return "{\"videos\":[]}";
+            return "{\"type\":\"movie\",\"lines\":[]}";
         }
 
         try {
@@ -161,7 +161,8 @@ public class WebAppInterface {
 
             if (currentId.isEmpty() || eToken.isEmpty()) {
                 Log.e(TAG, "Missing hidden inputs: currentId=" + currentId + ", eToken=" + eToken);
-                return "{\"videos\":[]}";
+                String mediaType = "2".equals(mtype) ? "tv" : "movie";
+                return "{\"type\":\"" + mediaType + "\",\"lines\":[]}";
             }
 
             Log.d(TAG, "currentId=" + currentId + ", mtype=" + mtype + ", eToken.length=" + eToken.length());
@@ -184,10 +185,13 @@ public class WebAppInterface {
             int state = responseJson.optInt("state", 0);
             if (state != 1) {
                 Log.w(TAG, "API returned state=" + state);
-                return "{\"videos\":[]}";
+                String mediaType = "2".equals(mtype) ? "tv" : "movie";
+                return "{\"type\":\"" + mediaType + "\",\"lines\":[]}";
             }
 
-            JSONArray videos = new JSONArray();
+            String mediaType = "2".equals(mtype) ? "tv" : "movie";
+            JSONArray lines = new JSONArray();
+
             JSONObject dataObj = responseJson.optJSONObject("data");
             if (dataObj != null) {
                 JSONArray list = dataObj.optJSONArray("list");
@@ -196,6 +200,8 @@ public class WebAppInterface {
                         JSONObject lineItem = list.getJSONObject(i);
                         String resDataStr = lineItem.optString("resData", "");
                         if (resDataStr.isEmpty()) continue;
+
+                        JSONArray items = new JSONArray();
 
                         // resData is a JSON string (array of objects with "url" and "newName")
                         // Example: [{"url":"高清$https://...m3u8#标清$https://...m3u8","newName":""}]
@@ -213,11 +219,12 @@ public class WebAppInterface {
                                     if (parts.length >= 2) {
                                         String label = parts[0].trim();
                                         String videoUrl = parts[1].trim();
-                                        if (videoUrl.toLowerCase().endsWith(".m3u8")) {
-                                            JSONObject video = new JSONObject();
-                                            video.put("url", videoUrl);
-                                            video.put("label", label.isEmpty() ? ("线路 " + (videos.length() + 1)) : label);
-                                            videos.put(video);
+                                        String vu = videoUrl.toLowerCase();
+                                        if (vu.endsWith(".m3u8") || vu.contains(".m3u8?") || vu.endsWith(".mp4")) {
+                                            JSONObject item = new JSONObject();
+                                            item.put("url", videoUrl);
+                                            item.put("label", label.isEmpty() ? ("视频源 " + (items.length() + 1)) : label);
+                                            items.put(item);
                                         }
                                     }
                                 }
@@ -230,27 +237,40 @@ public class WebAppInterface {
                                     .matcher(resDataStr);
                             while (m.find()) {
                                 String m3u8Url = m.group();
-                                JSONObject video = new JSONObject();
-                                video.put("url", m3u8Url);
-                                video.put("label", "视频源 " + (videos.length() + 1));
+                                JSONObject item = new JSONObject();
+                                item.put("url", m3u8Url);
+                                item.put("label", "视频源 " + (items.length() + 1));
                                 // Deduplicate
                                 boolean dup = false;
-                                for (int k = 0; k < videos.length(); k++) {
-                                    if (videos.getJSONObject(k).getString("url").equals(m3u8Url)) {
+                                for (int k = 0; k < items.length(); k++) {
+                                    if (items.getJSONObject(k).getString("url").equals(m3u8Url)) {
                                         dup = true;
                                         break;
                                     }
                                 }
-                                if (!dup) videos.put(video);
+                                if (!dup) items.put(item);
                             }
+                        }
+
+                        if (items.length() > 0) {
+                            JSONObject line = new JSONObject();
+                            line.put("name", "线路" + (i + 1));
+                            line.put("items", items);
+                            lines.put(line);
+                            Log.d(TAG, "Line " + (i + 1) + ": " + items.length() + " items");
                         }
                     }
                 }
             }
 
             JSONObject wrapper = new JSONObject();
-            wrapper.put("videos", videos);
-            Log.d(TAG, "Found " + videos.length() + " video sources via API");
+            wrapper.put("type", mediaType);
+            wrapper.put("lines", lines);
+            int totalItems = 0;
+            for (int li = 0; li < lines.length(); li++) {
+                totalItems += lines.getJSONObject(li).optJSONArray("items").length();
+            }
+            Log.d(TAG, "Found " + totalItems + " video items across " + lines.length() + " lines");
             return wrapper.toString();
 
         } catch (Throwable t) {

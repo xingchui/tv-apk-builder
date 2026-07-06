@@ -1,3 +1,6 @@
+__pycache__/
+*.pyc
+.playwright-cli/
 *.apk
 *.ap_
 *.aab

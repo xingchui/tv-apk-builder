@@ -4,6 +4,10 @@
 
 // --- State ---
 let currentResults = [];
+let currentDetailData = null;        // {type:"movie"|"tv", lines:[{name, items:[{label,url}]}]}
+let currentDetailTitle = '';
+let currentLineIndex = -1;           // -1 = line list, >=0 = episode list for that line
+
 let searchInputEl = document.getElementById('searchInput');
 let searchBtnEl = document.getElementById('searchBtn');
 let resultsContainer = document.getElementById('resultsContainer');
@@ -22,6 +26,9 @@ let sourceEmpty = document.getElementById('sourceEmpty');
 let playerTitle = document.getElementById('playerTitle');
 let toast = document.getElementById('toast');
 let hlsInstance = null;
+
+// --- Player Controls State ---
+let controlsTimer = null;
 
 // --- Focus Management ---
 let focusedIndex = -1;
@@ -143,7 +150,7 @@ async function corsProxyGetPlayInfo(pageUrl) {
   let mtype = (doc.querySelector('#mtype') || {}).value || '';
   let eToken = (doc.querySelector('#e_token') || {}).value || '';
 
-  if (!currentId || !eToken) return { videos: [] };
+  if (!currentId || !eToken) return { type: 'movie', lines: [] };
 
   let token = computeToken(currentId, eToken);
   let apiUrl = BASE_URL + '/api/getResN?videoId=' + currentId
@@ -152,14 +159,17 @@ async function corsProxyGetPlayInfo(pageUrl) {
 
   let apiResponse = await proxyFetch(apiUrl);
   let responseJson = JSON.parse(apiResponse);
-  if (responseJson.state !== 1) return { videos: [] };
+  if (responseJson.state !== 1) return { type: 'movie', lines: [] };
 
-  let videos = [];
+  let mediaType = mtype === '2' ? 'tv' : 'movie';
+  let lines = [];
   let dataObj = responseJson.data;
   if (dataObj && dataObj.list) {
-    for (let lineItem of dataObj.list) {
+    for (let lineIdx = 0; lineIdx < dataObj.list.length; lineIdx++) {
+      let lineItem = dataObj.list[lineIdx];
       let resDataStr = lineItem.resData || '';
       if (!resDataStr) continue;
+      let items = [];
       try {
         let resArray = JSON.parse(resDataStr);
         for (let resObj of resArray) {
@@ -171,7 +181,7 @@ async function corsProxyGetPlayInfo(pageUrl) {
               let label = parts[0].trim();
               let videoUrl = parts.slice(1).join('$').trim();
               if (videoUrl.toLowerCase().endsWith('.m3u8')) {
-                videos.push({ url: videoUrl, label: label || ('线路 ' + (videos.length + 1)) });
+                items.push({ url: videoUrl, label: label });
               }
             }
           }
@@ -180,14 +190,17 @@ async function corsProxyGetPlayInfo(pageUrl) {
         let m3u8Regex = /https?:\/\/[^"'\s,]+?\.m3u8[^"'\s,]*/g;
         let match;
         while ((match = m3u8Regex.exec(resDataStr)) !== null) {
-          if (!videos.some(v => v.url === match[0])) {
-            videos.push({ url: match[0], label: '视频源 ' + (videos.length + 1) });
+          if (!items.some(v => v.url === match[0])) {
+            items.push({ url: match[0], label: '视频源 ' + (items.length + 1) });
           }
         }
       }
+      if (items.length > 0) {
+        lines.push({ name: '线路' + (lineIdx + 1), items: items });
+      }
     }
   }
-  return { videos };
+  return { type: mediaType, lines: lines };
 }
 
 async function browserSearch(query) {
@@ -312,14 +325,11 @@ function escapeHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// --- Detail / Play ---
-let currentDetailVideos = [];
-let currentDetailTitle = '';
+// --- Detail / Source Selection ---
 
 async function openDetail(idx) {
   let item = currentResults[idx];
   if (!item) return;
-
   let detailUrl = item.url;
   if (!detailUrl) { showToast('无播放链接'); return; }
 
@@ -329,113 +339,242 @@ async function openDetail(idx) {
     let data;
     if (bridgeAvailable()) {
       let raw = nativeGetPlayInfo(detailUrl);
-      if (raw) {
-        data = JSON.parse(raw);
-      } else {
-        showToast('Native 获取信息返回空');
-        loadingIndicator.classList.add('hidden');
-        return;
-      }
+      if (raw) data = JSON.parse(raw);
+      else { showToast('Native 获取信息返回空'); loadingIndicator.classList.add('hidden'); return; }
     } else {
       data = await browserGetPlayInfo(detailUrl);
     }
 
-    if (data.error) {
-      showToast('获取播放信息失败: ' + data.error);
-      loadingIndicator.classList.add('hidden');
-      return;
-    }
-    if (!data.videos || data.videos.length === 0) {
-      showToast('未找到视频源');
-      loadingIndicator.classList.add('hidden');
-      return;
+    if (data.error) { showToast('获取播放信息失败: ' + data.error); loadingIndicator.classList.add('hidden'); return; }
+    if (!data.lines || data.lines.length === 0) { showToast('未找到视频源'); loadingIndicator.classList.add('hidden'); return; }
+
+    // Debug: log received data structure
+    console.log('[openDetail] type=' + data.type + ', lines=' + data.lines.length);
+    if (data.lines) {
+      for (let li = 0; li < data.lines.length; li++) {
+        let l = data.lines[li];
+        console.log('[openDetail]   line ' + (li+1) + ': "' + l.name + '" items=' + (l.items ? l.items.length : 0));
+      }
     }
 
-    currentDetailVideos = data.videos;
+    currentDetailData = data;
     currentDetailTitle = item.title;
-    showSourceSelection(currentDetailVideos, currentDetailTitle);
-
+    currentLineIndex = -1;
+    showSourceSelection();
   } catch (e) {
     showToast('解析失败: ' + e.message);
   }
   loadingIndicator.classList.add('hidden');
 }
 
-function showSourceSelection(videos, title) {
+function showSourceSelection() {
   sourceList.innerHTML = '';
   sourceEmpty.classList.add('hidden');
 
-  sourceTitle.textContent = title || '选择视频源';
-  sourceCount.textContent = videos.length + ' 个线路';
+  let data = currentDetailData;
+  sourceTitle.textContent = currentDetailTitle;
 
-  if (videos.length === 0) {
+  // Update dynamic text based on view mode
+  let promptText = document.getElementById('promptText');
+  let promptHint = document.getElementById('promptHint');
+  let backLabel = document.querySelector('.source-back-btn .back-label');
+  let isEpisodeView = (data && data.type === 'tv' && currentLineIndex >= 0);
+
+  if (promptText) promptText.textContent = isEpisodeView ? '请选择剧集' : '请选择播放线路';
+  if (promptHint) promptHint.textContent = isEpisodeView ? '按 ← 返回线路列表' : '按 ← 返回搜索结果';
+  if (backLabel) backLabel.textContent = isEpisodeView ? '返回线路' : '返回搜索';
+
+  if (!data || !data.lines || data.lines.length === 0) {
+    sourceCount.textContent = '0 个线路';
     sourceEmpty.classList.remove('hidden');
+    searchScreen.classList.remove('active');
+    sourceScreen.classList.add('active');
+    return;
+  }
+
+  if (data.type === 'movie') {
+    // Movie: flatten all items with "线路N: label"
+    let totalItems = 0;
+    for (let line of data.lines) totalItems += line.items.length;
+    sourceCount.textContent = totalItems + ' 个播放源';
+
+    for (let li = 0; li < data.lines.length; li++) {
+      let line = data.lines[li];
+      for (let ii = 0; ii < line.items.length; ii++) {
+        let item = line.items[ii];
+        let el = document.createElement('div');
+        el.className = 'source-item';
+        el.tabIndex = 0;
+        let label = '线路' + (li + 1) + ': ' + item.label;
+        el.innerHTML = `
+          <span class="source-item-icon">▶</span>
+          <span class="source-item-label">${escapeHtml(label)}</span>
+          <span class="source-item-index">${li + 1} / ${data.lines.length}</span>
+        `;
+        let playTitle = currentDetailTitle + ' - ' + label;
+        el.addEventListener('click', () => playVideo(item.url, playTitle));
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playVideo(item.url, playTitle); }
+        });
+        sourceList.appendChild(el);
+      }
+    }
   } else {
-    videos.forEach((v, idx) => {
-      let item = document.createElement('div');
-      item.className = 'source-item';
-      item.tabIndex = 0;
-      item.dataset.index = idx;
-
-      let icon = '▶';
-      if (v.label && (v.label.includes('国语') || v.label.includes('国'))) icon = '🎙';
-      else if (v.label && v.label.includes('原声')) icon = '🔊';
-      else if (v.label && v.label.includes('粤')) icon = '🎬';
-
-      let label = v.label || '线路 ' + (idx + 1);
-      item.innerHTML = `
-        <span class="source-item-icon">${icon}</span>
-        <span class="source-item-label">${escapeHtml(label)}</span>
-        <span class="source-item-index">${idx + 1} / ${videos.length}</span>
-      `;
-
-      item.addEventListener('click', () => playSelectedSource(idx));
-      item.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          playSelectedSource(idx);
-        }
-      });
-
-      sourceList.appendChild(item);
-    });
+    // TV: line list or episode list
+    if (currentLineIndex === -1) {
+      renderLineList(data.lines);
+    } else {
+      renderEpisodeList(data.lines[currentLineIndex]);
+    }
   }
 
   searchScreen.classList.remove('active');
   sourceScreen.classList.add('active');
-
   focusSourceIndex = 0;
   let items = sourceList.querySelectorAll('.source-item');
   if (items.length > 0) setTimeout(() => items[0].focus(), 100);
 }
 
-function playSelectedSource(idx) {
-  let video = currentDetailVideos[idx];
-  if (!video) return;
-  sourceScreen.classList.remove('active');
-  playVideo(video.url, video.label || currentDetailTitle);
+function renderLineList(lines) {
+  sourceCount.textContent = lines.length + ' 个线路';
+  for (let i = 0; i < lines.length; i++) {
+    let el = document.createElement('div');
+    el.className = 'source-item';
+    el.tabIndex = 0;
+    el.innerHTML = `
+      <span class="source-item-icon">📺</span>
+      <span class="source-item-label">${escapeHtml(lines[i].name)}</span>
+      <span class="source-item-index">${lines[i].items.length} 集</span>
+    `;
+    el.addEventListener('click', () => selectLine(i));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectLine(i); }
+    });
+    sourceList.appendChild(el);
+  }
+}
+
+function renderEpisodeList(line) {
+  sourceCount.textContent = line.items.length + ' 集';
+  for (let i = 0; i < line.items.length; i++) {
+    let item = line.items[i];
+    let el = document.createElement('div');
+    el.className = 'source-item';
+    el.tabIndex = 0;
+    el.innerHTML = `
+      <span class="source-item-icon">🎬</span>
+      <span class="source-item-label">${escapeHtml(item.label)}</span>
+      <span class="source-item-index">${i + 1} / ${line.items.length}</span>
+    `;
+    let playTitle = currentDetailTitle + ' - ' + (currentDetailData.lines[currentLineIndex] || {}).name + ' ' + item.label;
+    el.addEventListener('click', () => playVideo(item.url, playTitle));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playVideo(item.url, playTitle); }
+    });
+    sourceList.appendChild(el);
+  }
+}
+
+function selectLine(lineIdx) {
+  currentLineIndex = lineIdx;
+  let line = currentDetailData && currentDetailData.lines ? currentDetailData.lines[lineIdx] : null;
+  if (line) {
+    console.log('[selectLine] line=' + lineIdx + ' name="' + line.name + '" items=' + (line.items ? line.items.length : 0));
+  } else {
+    console.warn('[selectLine] line=' + lineIdx + ' NOT FOUND in lines (count=' + (currentDetailData ? currentDetailData.lines.length : 0) + ')');
+  }
+  showSourceSelection();
+}
+
+function exitToLines() {
+  currentLineIndex = -1;
+  showSourceSelection();
 }
 
 function exitSourceScreen() {
   sourceScreen.classList.remove('active');
   searchScreen.classList.add('active');
-  // Refocus the search input or last focused result
   searchInputEl.focus();
 }
 
+// --- Player Controls ---
+
+function formatTime(t) {
+  if (isNaN(t) || !isFinite(t)) return '00:00';
+  let m = Math.floor(t / 60);
+  let s = Math.floor(t % 60);
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+function updatePlayerTime() {
+  let cur = document.getElementById('ctrlCurrentTime');
+  let dur = document.getElementById('ctrlDuration');
+  let fill = document.getElementById('ctrlProgressFill');
+  if (!cur || !dur || !fill) return;
+  cur.textContent = formatTime(videoPlayer.currentTime);
+  dur.textContent = formatTime(videoPlayer.duration || 0);
+  let pct = videoPlayer.duration ? ((videoPlayer.currentTime / videoPlayer.duration) * 100) : 0;
+  fill.style.width = Math.min(pct, 100) + '%';
+}
+
+function showPlayerControls() {
+  let ctrl = document.getElementById('playerControls');
+  if (!ctrl) return;
+  ctrl.classList.remove('hidden');
+  clearTimeout(controlsTimer);
+  controlsTimer = setTimeout(() => ctrl.classList.add('hidden'), 4000);
+  updatePlayerTime();
+}
+
+function togglePlayPause() {
+  let btn = document.getElementById('ctrlPlayPause');
+  if (videoPlayer.paused) {
+    videoPlayer.play().catch(e => console.warn('play failed', e));
+    if (btn) btn.textContent = '⏸';
+  } else {
+    videoPlayer.pause();
+    if (btn) btn.textContent = '▶';
+  }
+}
+
+function seekRelative(seconds) {
+  let t = Math.max(0, Math.min((videoPlayer.currentTime || 0) + seconds, videoPlayer.duration || 0));
+  videoPlayer.currentTime = t;
+  updatePlayerTime();
+}
+
 function playVideo(url, title) {
-  // Switch to player screen
   playerScreen.classList.add('active');
   playerTitle.textContent = title || '';
 
-  // Focus the back button for DPad navigation on Android TV
-  setTimeout(() => backBtn.focus(), 200);
+  // Show custom controls
+  let ctrl = document.getElementById('playerControls');
+  if (ctrl) {
+    ctrl.classList.remove('hidden');
+    clearTimeout(controlsTimer);
+    controlsTimer = setTimeout(() => ctrl.classList.add('hidden'), 4000);
+  }
+
+  // Focus play/pause on DPad
+  setTimeout(() => {
+    let btn = document.getElementById('ctrlPlayPause');
+    if (btn) btn.focus();
+  }, 200);
+
+  // Listen for time updates
+  videoPlayer.removeEventListener('timeupdate', updatePlayerTime);
+  videoPlayer.addEventListener('timeupdate', updatePlayerTime);
+  videoPlayer.addEventListener('play', () => {
+    let btn = document.getElementById('ctrlPlayPause');
+    if (btn) btn.textContent = '⏸';
+  });
+  videoPlayer.addEventListener('pause', () => {
+    let btn = document.getElementById('ctrlPlayPause');
+    if (btn) btn.textContent = '▶';
+  });
 
   // Clean up old HLS instance
-  if (hlsInstance) {
-    hlsInstance.destroy();
-    hlsInstance = null;
-  }
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
 
   if (url.endsWith('.m3u8')) {
     if (Hls.isSupported()) {
@@ -446,12 +585,9 @@ function playVideo(url, title) {
         videoPlayer.play().catch(e => console.warn('play failed', e));
       });
       hlsInstance.on(Hls.Events.ERROR, (e, data) => {
-        if (data.fatal) {
-          showToast('播放出错');
-        }
+        if (data.fatal) showToast('播放出错');
       });
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS (Safari / some WebViews)
       videoPlayer.src = url;
       videoPlayer.play().catch(e => console.warn('play failed', e));
     } else {
@@ -463,27 +599,45 @@ function playVideo(url, title) {
   }
 }
 
-// --- Back ---
+function exitPlayer() {
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+  videoPlayer.pause();
+  videoPlayer.src = '';
+  videoPlayer.removeEventListener('timeupdate', updatePlayerTime);
+  playerScreen.classList.remove('active');
+  // Hide custom controls
+  let ctrl = document.getElementById('playerControls');
+  if (ctrl) ctrl.classList.add('hidden');
+  clearTimeout(controlsTimer);
+  // Go back to source selection
+  sourceScreen.classList.add('active');
+  let items = sourceList.querySelectorAll('.source-item');
+  if (items.length > 0) setTimeout(() => items[0].focus(), 100);
+}
+
+// --- Back Button Handlers ---
 backBtn.addEventListener('click', exitPlayer);
 backBtn.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); exitPlayer(); }
 });
 
-sourceBackBtn.addEventListener('click', exitSourceScreen);
+sourceBackBtn.addEventListener('click', () => {
+  if (currentLineIndex >= 0) { exitToLines(); }
+  else { exitSourceScreen(); }
+});
 sourceBackBtn.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); exitSourceScreen(); }
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    if (currentLineIndex >= 0) { exitToLines(); }
+    else { exitSourceScreen(); }
+  }
 });
 
-function exitPlayer() {
-  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
-  videoPlayer.pause();
-  videoPlayer.src = '';
-  playerScreen.classList.remove('active');
-  // Go back to source selection if we came from there
-  sourceScreen.classList.add('active');
-  let items = sourceList.querySelectorAll('.source-item');
-  if (items.length > 0) setTimeout(() => items[0].focus(), 100);
-}
+// --- Play/Pause button click handler ---
+document.addEventListener('click', (e) => {
+  let btn = e.target.closest('#ctrlPlayPause');
+  if (btn) togglePlayPause();
+});
 
 // --- Android TV Back Key ---
 document.addEventListener('keydown', (e) => {
@@ -493,9 +647,9 @@ document.addEventListener('keydown', (e) => {
       exitPlayer();
     } else if (sourceScreen.classList.contains('active')) {
       e.preventDefault();
-      exitSourceScreen();
+      if (currentLineIndex >= 0) { exitToLines(); }
+      else { exitSourceScreen(); }
     } else if (bridgeAvailable()) {
-      // On search screen — exit the app
       Android.exitApp();
     }
   }
@@ -505,10 +659,27 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keydown', (e) => {
   if (!playerScreen.classList.contains('active')) return;
 
-  // Only handle when backBtn is a possible focus target
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    backBtn.focus();
+  showPlayerControls();
+
+  switch (e.key) {
+    case 'Enter':
+    case 'MediaPlayPause':
+      e.preventDefault();
+      togglePlayPause();
+      break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      seekRelative(-10);
+      break;
+    case 'ArrowRight':
+      e.preventDefault();
+      seekRelative(10);
+      break;
+    case 'ArrowUp':
+    case 'ArrowDown':
+      e.preventDefault();
+      document.getElementById('ctrlPlayPause').focus();
+      break;
   }
 });
 
@@ -529,7 +700,6 @@ document.addEventListener('keydown', (e) => {
     focusedIndex = Math.max(focusedIndex - 1, 0);
     cards[focusedIndex].focus();
   } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    // Row navigation: assume 5 items per row
     e.preventDefault();
     let cols = 5;
     let row = Math.floor(focusedIndex / cols);

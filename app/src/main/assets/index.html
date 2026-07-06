@@ -40,8 +40,8 @@
       </div>
     </div>
     <div class="source-prompt">
-      <span class="prompt-text">请选择播放线路</span>
-      <span class="prompt-hint">按 ← 返回搜索结果</span>
+      <span id="promptText" class="prompt-text">请选择播放线路</span>
+      <span id="promptHint" class="prompt-hint">按 ← 返回搜索结果</span>
     </div>
     <div id="sourceList" class="source-list"></div>
     <div id="sourceEmpty" class="empty-state">
@@ -52,7 +52,19 @@
   <!-- Player Screen -->
   <div id="playerScreen" class="screen">
     <div id="videoContainer">
-      <video id="videoPlayer" controls autoplay playsinline></video>
+      <video id="videoPlayer" autoplay playsinline></video>
+      <!-- Custom DPad-friendly player controls -->
+      <div id="playerControls" class="player-controls hidden">
+        <div class="controls-overlay-bg"></div>
+        <button id="ctrlPlayPause" class="ctrl-btn ctrl-playpause" tabindex="0">▶</button>
+        <div class="ctrl-bottom">
+          <span class="ctrl-time" id="ctrlCurrentTime">00:00</span>
+          <div class="ctrl-progress" id="ctrlProgress">
+            <div class="ctrl-progress-fill" id="ctrlProgressFill"></div>
+          </div>
+          <span class="ctrl-time" id="ctrlDuration">00:00</span>
+        </div>
+      </div>
     </div>
     <div class="player-bar">
       <button id="backBtn" tabindex="0" class="back-button">← 返回</button>
