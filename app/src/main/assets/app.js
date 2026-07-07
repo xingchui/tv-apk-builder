@@ -86,6 +86,14 @@ function computeToken(currentId, eToken) {
   return result;
 }
 
+async function browserSearch(query) {
+  return await localProxySearch(query);
+}
+
+async function browserGetPlayInfo(pageUrl) {
+  return await localProxyGetPlayInfo(pageUrl);
+}
+
 // --- Toast ---
 let toastTimer = null;
 function showToast(msg) {
