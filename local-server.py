@@ -10,6 +10,7 @@ Then open http://localhost:8080
 import http.server
 import json
 import re
+import ssl
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -50,7 +51,8 @@ def normalize_thumbnail(url):
 
 def fetch(url):
     req = urllib.request.Request(url, headers={'User-Agent': UA})
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
         return resp.read().decode('utf-8', errors='replace')
 
 
@@ -151,7 +153,8 @@ def get_play_info(page_url):
         return {'type': media_type, 'lines': []}
 
     token = compute_token(current_id, e_token)
-    api_text = fetch(f'{BASE_URL}/api/getResN?videoId={current_id}&mtype={mtype or "1"}&token={token}')
+    api_params = urllib.parse.urlencode({'videoId': current_id, 'mtype': mtype or '1', 'token': token})
+    api_text = fetch(f'{BASE_URL}/api/getResN?{api_params}')
 
     api_json = json.loads(api_text)
     if api_json.get('state') != 1:
@@ -225,6 +228,9 @@ class CombinedHandler(http.server.SimpleHTTPRequestHandler):
                 data = get_play_info(play_url)
                 self.send_json(200, data)
             except Exception as e:
+                import traceback
+                tb = traceback.format_exc()
+                print(f'[play error] {tb}', flush=True)
                 self.send_json(500, {'error': str(e)})
             return
 
@@ -239,7 +245,10 @@ class CombinedHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
 
     def log_message(self, format, *args):
-        print(f'[local-server] {args[0]} {args[1]} {args[2]}')
+        try:
+            print(f'[local-server] {args[0]} {args[1]} {args[2]}')
+        except IndexError:
+            print(f'[local-server] {format % args if args else format}')
 
 
 if __name__ == '__main__':
@@ -254,3 +263,7 @@ if __name__ == '__main__':
         server.serve_forever()
     except KeyboardInterrupt:
         server.shutdown()
+    except Exception as main_e:
+        print(f'[local-server] FATAL: {main_e}', flush=True)
+        import traceback
+        traceback.print_exc()

@@ -56,13 +56,17 @@
       <!-- Custom DPad-friendly player controls -->
       <div id="playerControls" class="player-controls hidden">
         <div class="controls-overlay-bg"></div>
-        <button id="ctrlPlayPause" class="ctrl-btn ctrl-playpause" tabindex="0">▶</button>
+        <div class="ctrl-center">
+          <button id="ctrlNextEp" class="ctrl-btn ctrl-nav-btn" tabindex="0">⏭</button>
+          <button id="ctrlPlayPause" class="ctrl-btn ctrl-playpause" tabindex="0">▶</button>
+        </div>
         <div class="ctrl-bottom">
           <span class="ctrl-time" id="ctrlCurrentTime">00:00</span>
           <div class="ctrl-progress" id="ctrlProgress">
             <div class="ctrl-progress-fill" id="ctrlProgressFill"></div>
           </div>
           <span class="ctrl-time" id="ctrlDuration">00:00</span>
+          <button id="ctrlFullscreen" class="ctrl-btn ctrl-fullscreen" tabindex="0">⛶</button>
         </div>
       </div>
     </div>

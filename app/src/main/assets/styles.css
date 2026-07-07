@@ -235,6 +235,55 @@ html, body {
   pointer-events: none;
 }
 
+/* Center button row (play/pause + nav) */
+.ctrl-center {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.ctrl-nav-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.10);
+  border: 2px solid rgba(255,255,255,0.30);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, background 0.15s, border-color 0.15s;
+}
+.ctrl-nav-btn:focus {
+  transform: scale(1.15);
+  background: rgba(233,69,96,0.4);
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 20px rgba(233,69,96,0.5);
+}
+.ctrl-nav-btn.hidden-nav { display: none; }
+
+.ctrl-fullscreen {
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 20px;
+  cursor: pointer;
+  outline: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.ctrl-fullscreen:focus {
+  color: #fff;
+  background: rgba(255,255,255,0.15);
+}
+
 .ctrl-playpause {
   position: relative;
   z-index: 2;

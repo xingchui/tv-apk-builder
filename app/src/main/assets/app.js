@@ -7,6 +7,8 @@ let currentResults = [];
 let currentDetailData = null;        // {type:"movie"|"tv", lines:[{name, items:[{label,url}]}]}
 let currentDetailTitle = '';
 let currentLineIndex = -1;           // -1 = line list, >=0 = episode list for that line
+let currentPlayLineIndex = -1;       // current playing line index (for next-ep)
+let currentPlayEpisodeIndex = -1;    // current playing episode index (for next-ep)
 
 let searchInputEl = document.getElementById('searchInput');
 let searchBtnEl = document.getElementById('searchBtn');
@@ -284,9 +286,12 @@ function showSourceSelection() {
           <span class="source-item-index">${line.items.length} 源</span>
         `;
         let playTitle = currentDetailTitle + ' - ' + label;
-        el.addEventListener('click', () => playVideo(item.url, playTitle));
+        el.addEventListener('click', () => {
+          currentPlayLineIndex = li; currentPlayEpisodeIndex = ii;
+          playVideo(item.url, playTitle);
+        });
         el.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playVideo(item.url, playTitle); }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); currentPlayLineIndex = li; currentPlayEpisodeIndex = ii; playVideo(item.url, playTitle); }
         });
         sourceList.appendChild(el);
       }
@@ -339,9 +344,12 @@ function renderEpisodeList(line) {
       <span class="source-item-index">${i + 1} / ${line.items.length}</span>
     `;
     let playTitle = currentDetailTitle + ' - ' + (line ? line.name : '未知线路') + ' ' + item.label;
-    el.addEventListener('click', () => playVideo(item.url, playTitle));
+    el.addEventListener('click', () => {
+      currentPlayLineIndex = currentLineIndex; currentPlayEpisodeIndex = i;
+      playVideo(item.url, playTitle);
+    });
     el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playVideo(item.url, playTitle); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); currentPlayLineIndex = currentLineIndex; currentPlayEpisodeIndex = i; playVideo(item.url, playTitle); }
     });
     sourceList.appendChild(el);
   }
@@ -425,6 +433,40 @@ function seekRelative(seconds) {
   updatePlayerTime();
 }
 
+function updateNextEpVisibility() {
+  let btn = document.getElementById('ctrlNextEp');
+  if (!btn) return;
+  let show = currentDetailData && currentDetailData.type === 'tv'
+          && currentPlayLineIndex >= 0 && currentPlayEpisodeIndex >= 0
+          && currentDetailData.lines[currentPlayLineIndex]
+          && currentPlayEpisodeIndex + 1 < currentDetailData.lines[currentPlayLineIndex].items.length;
+  btn.classList.toggle('hidden-nav', !show);
+}
+
+function playNextEpisode() {
+  if (!currentDetailData || currentDetailData.type !== 'tv') return;
+  if (currentPlayLineIndex < 0 || currentPlayEpisodeIndex < 0) return;
+  let line = currentDetailData.lines[currentPlayLineIndex];
+  if (!line || currentPlayEpisodeIndex + 1 >= line.items.length) {
+    showToast('已是最后一集');
+    return;
+  }
+  currentPlayEpisodeIndex++;
+  let item = line.items[currentPlayEpisodeIndex];
+  let playTitle = currentDetailTitle + ' - ' + line.name + ' ' + item.label;
+  playVideo(item.url, playTitle);
+}
+
+function toggleFullscreen() {
+  let container = document.getElementById('videoContainer');
+  if (!container) return;
+  if (!document.fullscreenElement) {
+    container.requestFullscreen().catch(e => console.warn('fullscreen failed', e));
+  } else {
+    document.exitFullscreen();
+  }
+}
+
 function playVideo(url, title) {
   playerScreen.classList.add('active');
   playerTitle.textContent = title || '';
@@ -479,6 +521,8 @@ function playVideo(url, title) {
     videoPlayer.src = url;
     videoPlayer.play().catch(e => console.warn('play failed', e));
   }
+
+  updateNextEpVisibility();
 }
 
 function exitPlayer() {
@@ -516,15 +560,24 @@ sourceBackBtn.addEventListener('keydown', (e) => {
   }
 });
 
-// --- Play/Pause button click handler ---
+// --- Player button click handlers ---
 document.addEventListener('click', (e) => {
   let btn = e.target.closest('#ctrlPlayPause');
-  if (btn) togglePlayPause();
+  if (btn) { e.stopPropagation(); togglePlayPause(); return; }
+  btn = e.target.closest('#ctrlNextEp');
+  if (btn) { e.stopPropagation(); playNextEpisode(); return; }
+  btn = e.target.closest('#ctrlFullscreen');
+  if (btn) { e.stopPropagation(); toggleFullscreen(); return; }
 });
 
 // --- Android TV Back Key ---
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Back' || e.key === 'Escape') {
+    if (document.fullscreenElement) {
+      e.preventDefault();
+      document.exitFullscreen();
+      return;
+    }
     if (playerScreen.classList.contains('active')) {
       e.preventDefault();
       exitPlayer();
@@ -544,19 +597,50 @@ document.addEventListener('keydown', (e) => {
 
   showPlayerControls();
 
+  let ctrlBtns = ['ctrlNextEp', 'ctrlPlayPause', 'ctrlFullscreen'];
+  let active = document.activeElement;
+  let activeIsCtrl = active && ctrlBtns.some(id => active.id === id);
+
   switch (e.key) {
     case 'Enter':
+      e.preventDefault();
+      if (activeIsCtrl && active.id === 'ctrlNextEp') { playNextEpisode(); }
+      else if (activeIsCtrl && active.id === 'ctrlFullscreen') { toggleFullscreen(); }
+      else { togglePlayPause(); }
+      break;
     case 'MediaPlayPause':
       e.preventDefault();
       togglePlayPause();
       break;
     case 'ArrowLeft':
       e.preventDefault();
-      seekRelative(-10);
+      if (activeIsCtrl) {
+        if (active.id === 'ctrlPlayPause') {
+          let next = document.getElementById('ctrlNextEp');
+          if (next && !next.classList.contains('hidden-nav')) next.focus();
+        } else if (active.id === 'ctrlFullscreen') {
+          document.getElementById('ctrlPlayPause').focus();
+        } else {
+          document.getElementById('ctrlPlayPause').focus();
+        }
+      } else {
+        seekRelative(-10);
+      }
       break;
     case 'ArrowRight':
       e.preventDefault();
-      seekRelative(10);
+      if (activeIsCtrl) {
+        if (active.id === 'ctrlPlayPause') {
+          let fs = document.getElementById('ctrlFullscreen');
+          if (fs) fs.focus();
+        } else if (active.id === 'ctrlNextEp') {
+          document.getElementById('ctrlPlayPause').focus();
+        } else {
+          document.getElementById('ctrlPlayPause').focus();
+        }
+      } else {
+        seekRelative(10);
+      }
       break;
     case 'ArrowUp':
     case 'ArrowDown':
@@ -564,6 +648,14 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('ctrlPlayPause').focus();
       break;
   }
+});
+
+// --- Fullscreen change listener (update button icon) ---
+document.addEventListener('fullscreenchange', () => {
+  let btn = document.getElementById('ctrlFullscreen');
+  if (btn) btn.textContent = document.fullscreenElement ? '⛶' : '⛶';
+  // Keep controls visible briefly after fullscreen toggle
+  showPlayerControls();
 });
 
 // --- DPad Navigation for Results ---
