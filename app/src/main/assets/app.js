@@ -273,7 +273,7 @@ function showSourceSelection() {
         el.innerHTML = `
           <span class="source-item-icon">▶</span>
           <span class="source-item-label">${escapeHtml(label)}</span>
-          <span class="source-item-index">${li + 1} / ${data.lines.length}</span>
+          <span class="source-item-index">${line.items.length} 源</span>
         `;
         let playTitle = currentDetailTitle + ' - ' + label;
         el.addEventListener('click', () => playVideo(item.url, playTitle));
