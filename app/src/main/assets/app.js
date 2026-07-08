@@ -502,25 +502,61 @@ function playVideo(url, title) {
 
   if (url.endsWith('.m3u8')) {
     if (Hls.isSupported()) {
-      hlsInstance = new Hls();
+      hlsInstance = new Hls({
+        xhrSetup: function(xhr, url) {
+          xhr.setRequestHeader('Referer', 'https://www.ikanbot.com/');
+          xhr.setRequestHeader('Origin', 'https://www.ikanbot.com');
+        }
+      });
       hlsInstance.loadSource(url);
       hlsInstance.attachMedia(videoPlayer);
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-        videoPlayer.play().catch(e => console.warn('play failed', e));
+        videoPlayer.play().catch(e => {
+          console.warn('play failed after manifest parsed', e);
+          showToast('播放失败: ' + e.message);
+        });
       });
       hlsInstance.on(Hls.Events.ERROR, (e, data) => {
-        if (data.fatal) showToast('播放出错');
+        if (data.fatal) showToast('播放出错: ' + (data.response ? data.response.code : '加载失败'));
       });
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
       videoPlayer.src = url;
-      videoPlayer.play().catch(e => console.warn('play failed', e));
+      videoPlayer.play().catch(e => {
+        console.warn('native HLS play failed', e);
+        showToast('播放失败: ' + e.message);
+      });
     } else {
       showToast('当前设备不支持 HLS 播放');
     }
-  } else {
+  } else if (url.endsWith('.mp4')) {
+    // MP4: can be played natively with Referer trick via fetch+blob if needed
     videoPlayer.src = url;
-    videoPlayer.play().catch(e => console.warn('play failed', e));
+    videoPlayer.play().catch(e => {
+      console.warn('mp4 play failed', e);
+      showToast('播放失败: ' + e.message);
+    });
+  } else {
+    // Unknown format — try native anyway
+    videoPlayer.src = url;
+    videoPlayer.play().catch(e => {
+      console.warn('native play failed for unknown format', e);
+      showToast('播放失败: ' + e.message);
+    });
   }
+
+  // Catch native video errors
+  videoPlayer.onerror = function() {
+    let msg = '视频加载错误';
+    if (videoPlayer.error) {
+      switch (videoPlayer.error.code) {
+        case MediaError.MEDIA_ERR_ABORTED: msg = '播放被中断'; break;
+        case MediaError.MEDIA_ERR_NETWORK: msg = '网络加载失败'; break;
+        case MediaError.MEDIA_ERR_DECODE: msg = '视频解码失败'; break;
+        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED: msg = '不支持的视频格式'; break;
+      }
+    }
+    showToast(msg);
+  };
 
   updateNextEpVisibility();
 }
@@ -597,15 +633,17 @@ document.addEventListener('keydown', (e) => {
 
   showPlayerControls();
 
-  let ctrlBtns = ['ctrlNextEp', 'ctrlPlayPause', 'ctrlFullscreen'];
+  let ctrlBtns = ['backBtn', 'ctrlNextEp', 'ctrlPlayPause', 'ctrlFullscreen'];
   let active = document.activeElement;
-  let activeIsCtrl = active && ctrlBtns.some(id => active.id === id);
+  let activeId = active ? active.id : '';
+  let activeIdx = ctrlBtns.indexOf(activeId);
 
   switch (e.key) {
     case 'Enter':
       e.preventDefault();
-      if (activeIsCtrl && active.id === 'ctrlNextEp') { playNextEpisode(); }
-      else if (activeIsCtrl && active.id === 'ctrlFullscreen') { toggleFullscreen(); }
+      if (activeId === 'backBtn') { exitPlayer(); }
+      else if (activeId === 'ctrlNextEp') { playNextEpisode(); }
+      else if (activeId === 'ctrlFullscreen') { toggleFullscreen(); }
       else { togglePlayPause(); }
       break;
     case 'MediaPlayPause':
@@ -614,14 +652,25 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'ArrowLeft':
       e.preventDefault();
-      if (activeIsCtrl) {
-        if (active.id === 'ctrlPlayPause') {
-          let next = document.getElementById('ctrlNextEp');
-          if (next && !next.classList.contains('hidden-nav')) next.focus();
-        } else if (active.id === 'ctrlFullscreen') {
-          document.getElementById('ctrlPlayPause').focus();
+      if (activeIdx >= 0) {
+        let prevIdx = activeIdx - 1;
+        // Skip ctrlNextEp if hidden
+        while (prevIdx >= 0) {
+          let btn = document.getElementById(ctrlBtns[prevIdx]);
+          if (btn && !btn.classList.contains('hidden-nav')) break;
+          prevIdx--;
+        }
+        if (prevIdx >= 0) {
+          document.getElementById(ctrlBtns[prevIdx]).focus();
         } else {
-          document.getElementById('ctrlPlayPause').focus();
+          // wrap to last
+          let lastIdx = ctrlBtns.length - 1;
+          while (lastIdx > activeIdx) {
+            let btn = document.getElementById(ctrlBtns[lastIdx]);
+            if (btn && !btn.classList.contains('hidden-nav')) break;
+            lastIdx--;
+          }
+          document.getElementById(ctrlBtns[lastIdx]).focus();
         }
       } else {
         seekRelative(-10);
@@ -629,14 +678,24 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'ArrowRight':
       e.preventDefault();
-      if (activeIsCtrl) {
-        if (active.id === 'ctrlPlayPause') {
-          let fs = document.getElementById('ctrlFullscreen');
-          if (fs) fs.focus();
-        } else if (active.id === 'ctrlNextEp') {
-          document.getElementById('ctrlPlayPause').focus();
+      if (activeIdx >= 0) {
+        let nextIdx = activeIdx + 1;
+        while (nextIdx < ctrlBtns.length) {
+          let btn = document.getElementById(ctrlBtns[nextIdx]);
+          if (btn && !btn.classList.contains('hidden-nav')) break;
+          nextIdx++;
+        }
+        if (nextIdx < ctrlBtns.length) {
+          document.getElementById(ctrlBtns[nextIdx]).focus();
         } else {
-          document.getElementById('ctrlPlayPause').focus();
+          // wrap to first
+          let firstIdx = 0;
+          while (firstIdx < activeIdx) {
+            let btn = document.getElementById(ctrlBtns[firstIdx]);
+            if (btn && !btn.classList.contains('hidden-nav')) break;
+            firstIdx++;
+          }
+          document.getElementById(ctrlBtns[firstIdx]).focus();
         }
       } else {
         seekRelative(10);
@@ -645,7 +704,14 @@ document.addEventListener('keydown', (e) => {
     case 'ArrowUp':
     case 'ArrowDown':
       e.preventDefault();
-      document.getElementById('ctrlPlayPause').focus();
+      if (activeId === 'backBtn') {
+        // move from backBtn to bottom row
+        document.getElementById('ctrlPlayPause').focus();
+      } else if (activeIdx > 0) {
+        document.getElementById('ctrlPlayPause').focus();
+      } else {
+        document.getElementById('backBtn').focus();
+      }
       break;
   }
 });
@@ -696,16 +762,36 @@ document.addEventListener('keydown', (e) => {
   if (!sourceScreen.classList.contains('active')) return;
 
   let items = sourceList.querySelectorAll('.source-item');
-  if (items.length === 0) return;
+  let active = document.activeElement;
 
   if (e.key === 'ArrowDown') {
     e.preventDefault();
-    focusSourceIndex = Math.min(focusSourceIndex + 1, items.length - 1);
-    items[focusSourceIndex].focus();
+    if (active === sourceBackBtn) {
+      // Move from back button to first item
+      focusSourceIndex = 0;
+      if (items.length > 0) items[0].focus();
+    } else {
+      focusSourceIndex = Math.min(focusSourceIndex + 1, items.length - 1);
+      items[focusSourceIndex].focus();
+    }
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
-    focusSourceIndex = Math.max(focusSourceIndex - 1, 0);
-    items[focusSourceIndex].focus();
+    if (focusSourceIndex <= 0) {
+      // Move up to back button
+      sourceBackBtn.focus();
+    } else {
+      focusSourceIndex = Math.max(focusSourceIndex - 1, 0);
+      items[focusSourceIndex].focus();
+    }
+  } else if (e.key === 'ArrowLeft' && document.activeElement !== sourceBackBtn) {
+    // Left goes to the back button
+    e.preventDefault();
+    sourceBackBtn.focus();
+  } else if (e.key === 'ArrowRight' && active === sourceBackBtn) {
+    // Right goes from back button to first item
+    e.preventDefault();
+    focusSourceIndex = 0;
+    if (items.length > 0) items[0].focus();
   }
 });
 

@@ -32,7 +32,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         // Block mixed content (HTTPS page loading HTTP resources).
         // HLS video streams fetched by HLS.js / native video element are not affected.
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setUserAgentString(
             "Mozilla/5.0 (Linux; Android 14; Android TV) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +

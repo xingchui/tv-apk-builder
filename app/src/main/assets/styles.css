@@ -194,15 +194,16 @@ html, body {
 /* --- Player Screen --- */
 #playerScreen {
   background: #000;
+  position: relative;
 }
 
 #videoContainer {
-  flex: 1;
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #000;
-  position: relative;
   overflow: hidden;
 }
 #videoPlayer {
@@ -348,11 +349,14 @@ html, body {
 }
 
 .player-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   padding: 12px 24px;
-  background: rgba(0,0,0,0.85);
-  flex-shrink: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
+  pointer-events: auto;
 }
 
 .back-button {
@@ -378,6 +382,12 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+@media (min-width: 960px) {
+  .player-bar { padding: 16px 48px 20px; }
+  .player-title { font-size: 17px; }
+  .back-button { font-size: 18px; padding: 10px 20px; }
 }
 
 /* --- Source Selection Screen --- */
