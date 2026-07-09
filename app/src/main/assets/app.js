@@ -181,6 +181,7 @@ function renderResults(results) {
     card.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
+        e.stopPropagation();
         openDetail(idx);
       }
     });
@@ -291,7 +292,7 @@ function showSourceSelection() {
           playVideo(item.url, playTitle);
         });
         el.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); currentPlayLineIndex = li; currentPlayEpisodeIndex = ii; playVideo(item.url, playTitle); }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); currentPlayLineIndex = li; currentPlayEpisodeIndex = ii; playVideo(item.url, playTitle); }
         });
         sourceList.appendChild(el);
       }
@@ -325,7 +326,7 @@ function renderLineList(lines) {
     `;
     el.addEventListener('click', () => selectLine(i));
     el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectLine(i); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); selectLine(i); }
     });
     sourceList.appendChild(el);
   }
@@ -349,7 +350,7 @@ function renderEpisodeList(line) {
       playVideo(item.url, playTitle);
     });
     el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); currentPlayLineIndex = currentLineIndex; currentPlayEpisodeIndex = i; playVideo(item.url, playTitle); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); currentPlayLineIndex = currentLineIndex; currentPlayEpisodeIndex = i; playVideo(item.url, playTitle); }
     });
     sourceList.appendChild(el);
   }
@@ -644,7 +645,10 @@ document.addEventListener('keydown', (e) => {
       if (activeId === 'backBtn') { exitPlayer(); }
       else if (activeId === 'ctrlNextEp') { playNextEpisode(); }
       else if (activeId === 'ctrlFullscreen') { toggleFullscreen(); }
-      else { togglePlayPause(); }
+      else if (e.target.closest('#playerControls') || e.target.closest('.player-bar')) {
+        togglePlayPause();
+      }
+      // else: Enter from outside player (bubbled) — ignore
       break;
     case 'MediaPlayPause':
       e.preventDefault();
