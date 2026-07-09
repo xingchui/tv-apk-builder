@@ -51,9 +51,6 @@ public class ExoPlayerActivity extends AppCompatActivity {
 
         Log.d(TAG, "Playing: " + videoUrl + " (" + videoTitle + ")");
 
-        // Build ExoPlayer
-        player = new ExoPlayer.Builder(this).build();
-
         // Create data source factory with custom HTTP headers (Referer for CDN access)
         DefaultHttpDataSource.Factory dataSourceFactory = new DefaultHttpDataSource.Factory();
         Map<String, String> headers = new HashMap<>();
@@ -61,11 +58,13 @@ public class ExoPlayerActivity extends AppCompatActivity {
         headers.put("Origin", "https://www.ikanbot.com");
         dataSourceFactory.setDefaultRequestProperties(headers);
 
-        // Use DefaultMediaSourceFactory which auto-detects HLS, MP4, etc.
+        // Build ExoPlayer with custom data source via DefaultMediaSourceFactory
+        // DefaultMediaSourceFactory auto-detects HLS, MP4, etc.
         // Requires media3-exoplayer-hls on classpath for HLS detection.
-        player.setMediaSourceFactory(
-                new DefaultMediaSourceFactory(dataSourceFactory)
-        );
+        player = new ExoPlayer.Builder(this)
+                .setMediaSourceFactory(
+                        new DefaultMediaSourceFactory(dataSourceFactory))
+                .build();
 
         MediaItem mediaItem = MediaItem.fromUri(videoUrl);
         player.setMediaItem(mediaItem);
