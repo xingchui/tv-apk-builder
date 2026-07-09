@@ -7,21 +7,21 @@ import android.view.KeyEvent;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
-import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.PlayerView;
 
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Fullscreen ExoPlayer activity for native HLS/MP4 playback.
  * Receives video URL via Intent extra "videoUrl".
- * Sets custom Referer header for ikanbot.com CDN access.
+ * Uses DefaultHttpDataSource with custom Referer header for ikanbot.com CDN access.
  */
 public class ExoPlayerActivity extends AppCompatActivity {
 
@@ -51,20 +51,26 @@ public class ExoPlayerActivity extends AppCompatActivity {
 
         Log.d(TAG, "Playing: " + videoUrl + " (" + videoTitle + ")");
 
-        // Build ExoPlayer with custom headers for Referer
+        // Build ExoPlayer
         player = new ExoPlayer.Builder(this).build();
 
-        // Build MediaItem with custom request headers
-        MediaItem mediaItem = new MediaItem.Builder()
-                .setUri(videoUrl)
-                .setRequestHeaders(Map.of(
-                        "Referer", Collections.singletonList(REFERER),
-                        "Origin", Collections.singletonList("https://www.ikanbot.com")
-                ))
-                .build();
+        // Create data source factory with custom HTTP headers (Referer for CDN access)
+        DefaultHttpDataSource.Factory dataSourceFactory = new DefaultHttpDataSource.Factory();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Referer", REFERER);
+        headers.put("Origin", "https://www.ikanbot.com");
+        dataSourceFactory.setDefaultRequestProperties(headers);
 
+        // Use DefaultMediaSourceFactory which auto-detects HLS, MP4, etc.
+        // Requires media3-exoplayer-hls on classpath for HLS detection.
+        player.setMediaSourceFactory(
+                new DefaultMediaSourceFactory(dataSourceFactory)
+        );
+
+        MediaItem mediaItem = MediaItem.fromUri(videoUrl);
         player.setMediaItem(mediaItem);
         player.setPlayWhenReady(true);
+
         player.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int playbackState) {
@@ -87,24 +93,18 @@ public class ExoPlayerActivity extends AppCompatActivity {
             @Override
             public void onPlayerError(PlaybackException error) {
                 Log.e(TAG, "Playback error: " + error.getMessage());
-                // Stay on screen so user can see error, then back out manually
             }
         });
 
         // Attach player to view
         playerView.setPlayer(player);
-        playerView.setUseController(true);      // Show built-in controls
-        playerView.setKeepScreenOn(true);       // Keep screen on during playback
+        playerView.setUseController(true);
+        playerView.setKeepScreenOn(true);
     }
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // Back button exits player (ExoPlayer's controller handles it, but just in case)
         if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
-            // If controller is showing, let it handle back first
-            if (playerView.isControllerFullyVisible()) {
-                // Controller handles its own back navigation
-            }
             finish();
             return true;
         }
