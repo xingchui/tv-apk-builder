@@ -417,11 +417,21 @@ function showPlayerControls() {
   updatePlayerTime();
 }
 
+function syncPlayBtn() {
+  let btn = document.getElementById('ctrlPlayPause');
+  if (!btn) return;
+  btn.textContent = videoPlayer.paused ? '▶' : '⏸';
+}
+
 function togglePlayPause() {
   let btn = document.getElementById('ctrlPlayPause');
   if (videoPlayer.paused) {
-    videoPlayer.play().catch(e => console.warn('play failed', e));
-    if (btn) btn.textContent = '⏸';
+    videoPlayer.play().then(() => { if (btn) btn.textContent = '⏸'; })
+      .catch(e => {
+        console.warn('play failed', e);
+        if (btn) btn.textContent = '▶';
+        showToast('播放失败: ' + e.message);
+      });
   } else {
     videoPlayer.pause();
     if (btn) btn.textContent = '▶';
@@ -468,9 +478,34 @@ function toggleFullscreen() {
   }
 }
 
+// --- Named listener functions (so they can be removed) ---
+function onVideoPlay() { syncPlayBtn(); }
+function onVideoPause() { syncPlayBtn(); }
+
+function clearPlayerListeners() {
+  videoPlayer.removeEventListener('timeupdate', updatePlayerTime);
+  videoPlayer.removeEventListener('play', onVideoPlay);
+  videoPlayer.removeEventListener('pause', onVideoPause);
+  videoPlayer.onerror = null;
+}
+
 function playVideo(url, title) {
   playerScreen.classList.add('active');
   playerTitle.textContent = title || '';
+
+  // Reset current time for fresh playback
+  videoPlayer.currentTime = 0;
+
+  // Clean up previous listeners
+  clearPlayerListeners();
+
+  // Attach fresh listeners
+  videoPlayer.addEventListener('timeupdate', updatePlayerTime);
+  videoPlayer.addEventListener('play', onVideoPlay);
+  videoPlayer.addEventListener('pause', onVideoPause);
+
+  // Assert paused icon (will be updated by play event)
+  syncPlayBtn();
 
   // Show custom controls
   let ctrl = document.getElementById('playerControls');
@@ -480,26 +515,22 @@ function playVideo(url, title) {
     controlsTimer = setTimeout(() => ctrl.classList.add('hidden'), 4000);
   }
 
-  // Focus play/pause on DPad
+  // Focus play/pause on DPad (deferred so the element is layout-ready)
   setTimeout(() => {
     let btn = document.getElementById('ctrlPlayPause');
     if (btn) btn.focus();
   }, 200);
 
-  // Listen for time updates
-  videoPlayer.removeEventListener('timeupdate', updatePlayerTime);
-  videoPlayer.addEventListener('timeupdate', updatePlayerTime);
-  videoPlayer.addEventListener('play', () => {
-    let btn = document.getElementById('ctrlPlayPause');
-    if (btn) btn.textContent = '⏸';
-  });
-  videoPlayer.addEventListener('pause', () => {
-    let btn = document.getElementById('ctrlPlayPause');
-    if (btn) btn.textContent = '▶';
-  });
-
   // Clean up old HLS instance
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+
+  function doPlay() {
+    videoPlayer.play().then(syncPlayBtn).catch(e => {
+      console.warn('playVideo play() failed', e);
+      syncPlayBtn();
+      showToast('播放失败: ' + e.message);
+    });
+  }
 
   if (url.endsWith('.m3u8')) {
     if (Hls.isSupported()) {
@@ -511,38 +542,33 @@ function playVideo(url, title) {
       });
       hlsInstance.loadSource(url);
       hlsInstance.attachMedia(videoPlayer);
-      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-        videoPlayer.play().catch(e => {
-          console.warn('play failed after manifest parsed', e);
-          showToast('播放失败: ' + e.message);
-        });
-      });
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, doPlay);
       hlsInstance.on(Hls.Events.ERROR, (e, data) => {
-        if (data.fatal) showToast('播放出错: ' + (data.response ? data.response.code : '加载失败'));
+        if (data.fatal) {
+          showToast('播放出错: ' + (data.response ? data.response.code : '加载失败'));
+        } else if (data.details === 'bufferStallError' || data.details === 'bufferNudgeOnStall') {
+          // Recoverable stall — try to resume
+          videoPlayer.play().catch(function(){});
+        }
       });
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
       videoPlayer.src = url;
-      videoPlayer.play().catch(e => {
-        console.warn('native HLS play failed', e);
-        showToast('播放失败: ' + e.message);
-      });
+      doPlay();
     } else {
       showToast('当前设备不支持 HLS 播放');
     }
   } else if (url.endsWith('.mp4')) {
-    // MP4: can be played natively with Referer trick via fetch+blob if needed
+    // Add listener BEFORE setting src to avoid race
+    videoPlayer.addEventListener('canplay', doPlay, { once: true });
     videoPlayer.src = url;
-    videoPlayer.play().catch(e => {
-      console.warn('mp4 play failed', e);
-      showToast('播放失败: ' + e.message);
-    });
+    // Fallback: if canplay never fires, try after a timeout
+    setTimeout(() => {
+      if (videoPlayer.paused && videoPlayer.readyState < 3) doPlay();
+    }, 3000);
   } else {
     // Unknown format — try native anyway
     videoPlayer.src = url;
-    videoPlayer.play().catch(e => {
-      console.warn('native play failed for unknown format', e);
-      showToast('播放失败: ' + e.message);
-    });
+    doPlay();
   }
 
   // Catch native video errors
@@ -557,6 +583,7 @@ function playVideo(url, title) {
       }
     }
     showToast(msg);
+    syncPlayBtn();
   };
 
   updateNextEpVisibility();
@@ -566,7 +593,8 @@ function exitPlayer() {
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
   videoPlayer.pause();
   videoPlayer.src = '';
-  videoPlayer.removeEventListener('timeupdate', updatePlayerTime);
+  clearPlayerListeners();
+  videoPlayer.currentTime = 0;
   if (updateTimeRaf) { cancelAnimationFrame(updateTimeRaf); updateTimeRaf = null; }
   playerScreen.classList.remove('active');
   // Hide custom controls
