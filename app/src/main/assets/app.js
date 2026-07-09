@@ -55,6 +55,14 @@ function nativeGetPlayInfo(url) {
   return null;
 }
 
+function nativePlayVideo(url, title) {
+  if (bridgeAvailable()) {
+    Android.playVideoNative(JSON.stringify({url: url, title: title || ''}));
+    return true;
+  }
+  return false;
+}
+
 // --- Local Proxy ---
 // When native bridge is unavailable (browser testing), runs queries through
 // the local Python server: python local-server.py
@@ -490,6 +498,13 @@ function clearPlayerListeners() {
 }
 
 function playVideo(url, title) {
+  // Use native ExoPlayer when available (Android TV production path)
+  // This bypasses all WebView <video> + HLS.js issues (play/pause race, MediaSource, etc.)
+  if (nativePlayVideo(url, title)) {
+    return;
+  }
+
+  // Fallback: WebView <video> + HLS.js for browser development testing
   playerScreen.classList.add('active');
   playerTitle.textContent = title || '';
 

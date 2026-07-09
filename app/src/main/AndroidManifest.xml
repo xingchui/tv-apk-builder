@@ -32,5 +32,12 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Native ExoPlayer for HLS/MP4 playback -->
+        <activity
+            android:name="com.tvapkbuilder.ExoPlayerActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize" />
     </application>
 </manifest>

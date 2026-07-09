@@ -2,6 +2,7 @@ package com.tvapkbuilder;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 
@@ -276,6 +277,29 @@ public class WebAppInterface {
         } catch (Throwable t) {
             Log.e(TAG, "getPlayInfo error", t);
             return errorJson(t);
+        }
+    }
+
+    /**
+     * Play video using native ExoPlayer (bypasses WebView <video> element).
+     * Receives JSON string: {"url":"...","title":"..."}
+     * Launches ExoPlayerActivity with custom Referer header.
+     */
+    @JavascriptInterface
+    public void playVideoNative(String jsonParams) {
+        Log.d(TAG, "playVideoNative called: " + jsonParams);
+        try {
+            JSONObject params = new JSONObject(jsonParams);
+            String url = params.getString("url");
+            String title = params.optString("title", "");
+
+            Intent intent = new Intent(context, ExoPlayerActivity.class);
+            intent.putExtra("videoUrl", url);
+            intent.putExtra("videoTitle", title);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+        } catch (Exception e) {
+            Log.e(TAG, "playVideoNative error", e);
         }
     }
 
