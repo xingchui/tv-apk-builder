@@ -452,6 +452,90 @@ function seekRelative(seconds) {
   updatePlayerTime();
 }
 
+// --- Desktop playback speed ---
+const SPEED_OPTIONS = [0.5, 1, 1.5, 2];
+let speedIndex = 1; // index into SPEED_OPTIONS (default 1x)
+
+function updateSpeedBtn() {
+  let btn = document.getElementById('ctrlSpeed');
+  if (btn) btn.textContent = SPEED_OPTIONS[speedIndex] + 'x';
+}
+
+function cycleSpeed() {
+  speedIndex = (speedIndex + 1) % SPEED_OPTIONS.length;
+  videoPlayer.playbackRate = SPEED_OPTIONS[speedIndex];
+  updateSpeedBtn();
+  showToast('倍速 ' + SPEED_OPTIONS[speedIndex] + 'x');
+}
+
+// --- Progress bar: click / drag to seek (desktop mouse) ---
+function seekToRatio(ratio) {
+  let dur = videoPlayer.duration || 0;
+  if (!dur) return;
+  let t = Math.max(0, Math.min(ratio, 1)) * dur;
+  videoPlayer.currentTime = t;
+  updatePlayerTime();
+}
+
+function setupProgressSeek() {
+  let bar = document.getElementById('ctrlProgress');
+  if (!bar) return;
+  let dragging = false;
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    bar.classList.add('dragging');
+    bar.setPointerCapture(e.pointerId);
+    let rect = bar.getBoundingClientRect();
+    seekToRatio((e.clientX - rect.left) / rect.width);
+    showPlayerControls();
+  });
+  bar.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    let rect = bar.getBoundingClientRect();
+    seekToRatio((e.clientX - rect.left) / rect.width);
+  });
+  let endDrag = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    bar.classList.remove('dragging');
+    if (bar.hasPointerCapture(e.pointerId)) bar.releasePointerCapture(e.pointerId);
+  };
+  bar.addEventListener('pointerup', endDrag);
+  bar.addEventListener('pointercancel', endDrag);
+}
+
+// --- Native fullscreen (pywebview desktop) vs HTML5 fallback ---
+function nativeFullscreenAvailable() {
+  return typeof window.pywebview !== 'undefined'
+      && window.pywebview.api
+      && typeof window.pywebview.api.toggle_fullscreen === 'function';
+}
+
+function refreshNativeFullscreenIcon() {
+  if (!nativeFullscreenAvailable()) return;
+  Promise.resolve(window.pywebview.api.is_fullscreen()).then(fs => {
+    let btn = document.getElementById('ctrlFullscreen');
+    if (btn) btn.textContent = fs ? '⛶' : '⛶';
+  }).catch(() => {});
+}
+
+function toggleFullscreen() {
+  if (nativeFullscreenAvailable()) {
+    window.pywebview.api.toggle_fullscreen();
+    refreshNativeFullscreenIcon();
+    showPlayerControls();
+    return;
+  }
+  let container = document.getElementById('videoContainer');
+  if (!container) return;
+  if (!document.fullscreenElement) {
+    container.requestFullscreen().catch(e => console.warn('fullscreen failed', e));
+  } else {
+    document.exitFullscreen();
+  }
+}
+
 function updateNextEpVisibility() {
   let btn = document.getElementById('ctrlNextEp');
   if (!btn) return;
@@ -474,16 +558,6 @@ function playNextEpisode() {
   let item = line.items[currentPlayEpisodeIndex];
   let playTitle = currentDetailTitle + ' - ' + line.name + ' ' + item.label;
   playVideo(item.url, playTitle);
-}
-
-function toggleFullscreen() {
-  let container = document.getElementById('videoContainer');
-  if (!container) return;
-  if (!document.fullscreenElement) {
-    container.requestFullscreen().catch(e => console.warn('fullscreen failed', e));
-  } else {
-    document.exitFullscreen();
-  }
 }
 
 // --- Named listener functions (so they can be removed) ---
@@ -510,6 +584,11 @@ function playVideo(url, title) {
 
   // Reset current time for fresh playback
   videoPlayer.currentTime = 0;
+
+  // Reset playback speed to 1x for a fresh video
+  speedIndex = 1;
+  videoPlayer.playbackRate = 1;
+  updateSpeedBtn();
 
   // Clean up previous listeners
   clearPlayerListeners();
@@ -646,38 +725,77 @@ document.addEventListener('click', (e) => {
   if (btn) { e.stopPropagation(); togglePlayPause(); return; }
   btn = e.target.closest('#ctrlNextEp');
   if (btn) { e.stopPropagation(); playNextEpisode(); return; }
+  btn = e.target.closest('#ctrlSpeed');
+  if (btn) { e.stopPropagation(); cycleSpeed(); return; }
   btn = e.target.closest('#ctrlFullscreen');
   if (btn) { e.stopPropagation(); toggleFullscreen(); return; }
+  // Progress bar: don't let bar clicks bubble into click-to-toggle
+  if (e.target.closest('#ctrlProgress')) return;
+  // Click anywhere on the video area (not a button / bar): toggle play/pause
+  if (e.target.closest('#videoContainer')) {
+    showPlayerControls();
+    togglePlayPause();
+  }
+});
+
+// --- Desktop: move the mouse anywhere in the player → show controls ---
+document.addEventListener('mousemove', (e) => {
+  if (!playerScreen.classList.contains('active')) return;
+  showPlayerControls();
 });
 
 // --- Android TV Back Key ---
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Back' || e.key === 'Escape') {
+    // Native (pywebview) fullscreen: Esc exits the OS-level fullscreen window
+    if (nativeFullscreenAvailable() && !document.fullscreenElement) {
+      Promise.resolve(window.pywebview.api.is_fullscreen()).then(fs => {
+        if (fs) {
+          window.pywebview.api.exit_fullscreen();
+          refreshNativeFullscreenIcon();
+          showPlayerControls();
+        } else {
+          fallbackBackKey(e);
+        }
+      }).catch(() => fallbackBackKey(e));
+      return;
+    }
     if (document.fullscreenElement) {
       e.preventDefault();
       document.exitFullscreen();
       return;
     }
-    if (playerScreen.classList.contains('active')) {
-      e.preventDefault();
-      exitPlayer();
-    } else if (sourceScreen.classList.contains('active')) {
-      e.preventDefault();
-      if (currentLineIndex >= 0) { exitToLines(); }
-      else { exitSourceScreen(); }
-    } else if (bridgeAvailable()) {
-      Android.exitApp();
-    }
+    fallbackBackKey(e);
   }
 });
+
+function fallbackBackKey(e) {
+  if (playerScreen.classList.contains('active')) {
+    e.preventDefault();
+    exitPlayer();
+  } else if (sourceScreen.classList.contains('active')) {
+    e.preventDefault();
+    if (currentLineIndex >= 0) { exitToLines(); }
+    else { exitSourceScreen(); }
+  } else if (bridgeAvailable()) {
+    Android.exitApp();
+  }
+}
 
 // --- DPad Navigation for Player Screen ---
 document.addEventListener('keydown', (e) => {
   if (!playerScreen.classList.contains('active')) return;
 
+  // Space bar = play/pause (desktop); MediaPlayPause = TV remote
+  if (e.key === ' ') {
+    e.preventDefault();
+    togglePlayPause();
+    return;
+  }
+
   showPlayerControls();
 
-  let ctrlBtns = ['backBtn', 'ctrlNextEp', 'ctrlPlayPause', 'ctrlFullscreen'];
+  let ctrlBtns = ['backBtn', 'ctrlNextEp', 'ctrlPlayPause', 'ctrlSpeed', 'ctrlFullscreen'];
   let active = document.activeElement;
   let activeId = active ? active.id : '';
   let activeIdx = ctrlBtns.indexOf(activeId);
@@ -687,6 +805,7 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       if (activeId === 'backBtn') { exitPlayer(); }
       else if (activeId === 'ctrlNextEp') { playNextEpisode(); }
+      else if (activeId === 'ctrlSpeed') { cycleSpeed(); }
       else if (activeId === 'ctrlFullscreen') { toggleFullscreen(); }
       else if (e.target.closest('#playerControls') || e.target.closest('.player-bar')) {
         togglePlayPause();
@@ -854,4 +973,5 @@ searchInputEl.addEventListener('keydown', (e) => {
 // Initial focus
 window.addEventListener('load', () => {
   searchInputEl.focus();
+  setupProgressSeek();
 });

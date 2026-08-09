@@ -20,3 +20,10 @@ build/
 .omo/
 *.db
 daemon.log
+
+# PyInstaller desktop build (python desktop-app.py)
+# dist/TVSearch.exe is committed intentionally (desktop release binary)
+dist/*
+!dist/TVSearch.exe
+build/
+*.spec

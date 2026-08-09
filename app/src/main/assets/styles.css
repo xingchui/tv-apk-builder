@@ -285,6 +285,27 @@ html, body {
   background: rgba(255,255,255,0.15);
 }
 
+.ctrl-speed {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: rgba(255,255,255,0.85);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.ctrl-speed:focus {
+  color: #fff;
+  background: rgba(255,255,255,0.2);
+  border-color: var(--focus-ring);
+}
+
 .ctrl-playpause {
   position: relative;
   z-index: 2;
@@ -339,13 +360,24 @@ html, body {
   border-radius: 3px;
   cursor: pointer;
   position: relative;
+  transition: height 0.15s;
+}
+.ctrl-progress:hover {
+  height: 10px;
+}
+.ctrl-progress.dragging {
+  height: 10px;
+}
+.ctrl-progress:hover .ctrl-progress-fill,
+.ctrl-progress.dragging .ctrl-progress-fill {
+  background: #ff5f7a;
 }
 .ctrl-progress-fill {
   height: 100%;
   background: var(--accent);
   border-radius: 3px;
   width: 0%;
-  transition: width 0.2s;
+  transition: width 0.1s;
 }
 
 .player-bar {
