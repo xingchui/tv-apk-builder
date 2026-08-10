@@ -19,7 +19,10 @@
     </div>
     <div id="resultsContainer" class="results-grid"></div>
     <div id="emptyState" class="empty-state">
-      <p>输入关键词搜索影片</p>
+      <div class="empty-inner">
+        <div id="historySection" class="history-section hidden"></div>
+        <p id="emptyHint">输入关键词搜索影片</p>
+      </div>
     </div>
     <div id="loadingIndicator" class="loading hidden">
       <div class="spinner"></div>
@@ -66,6 +69,7 @@
             <div class="ctrl-progress-fill" id="ctrlProgressFill"></div>
           </div>
           <span class="ctrl-time" id="ctrlDuration">00:00</span>
+          <button id="ctrlVolume" class="ctrl-btn ctrl-volume" tabindex="0" title="音量">🔊</button>
           <button id="ctrlSpeed" class="ctrl-btn ctrl-speed" tabindex="0" title="倍速">1x</button>
           <button id="ctrlFullscreen" class="ctrl-btn ctrl-fullscreen" tabindex="0">⛶</button>
         </div>

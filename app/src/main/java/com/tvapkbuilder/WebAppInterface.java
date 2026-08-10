@@ -282,7 +282,9 @@ public class WebAppInterface {
 
     /**
      * Play video using native ExoPlayer (bypasses WebView <video> element).
-     * Receives JSON string: {"url":"...","title":"..."}
+     * Receives JSON string: {"url":"...","title":"...","resumeTime":123.4,"volume":0.8}
+     *   resumeTime — seconds to seek to when playback starts (resume from history), optional
+     *   volume     — 0.0-1.0 initial player volume (persisted JS volume level), optional
      * Launches ExoPlayerActivity with custom Referer header.
      */
     @JavascriptInterface
@@ -292,10 +294,14 @@ public class WebAppInterface {
             JSONObject params = new JSONObject(jsonParams);
             String url = params.getString("url");
             String title = params.optString("title", "");
+            double resumeTime = params.optDouble("resumeTime", 0.0);
+            double volume = params.optDouble("volume", 1.0);
 
             Intent intent = new Intent(context, ExoPlayerActivity.class);
             intent.putExtra("videoUrl", url);
             intent.putExtra("videoTitle", title);
+            intent.putExtra("videoResumeTimeMs", (long) (resumeTime * 1000));
+            intent.putExtra("videoVolume", (float) Math.max(0.0, Math.min(1.0, volume)));
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(intent);
         } catch (Exception e) {

@@ -32,6 +32,14 @@ let hlsInstance = null;
 // --- Player Controls State ---
 let controlsTimer = null;
 
+// --- Volume State (persisted across sessions) ---
+const VOLUME_KEY = 'tvsearch_volume';
+let volumeLevel = 1;
+
+// --- Watch History (continue watching) ---
+const HISTORY_KEY = 'tvsearch_watch_history';
+const HISTORY_MAX = 12;
+
 // --- Focus Management ---
 let focusedIndex = -1;
 let focusSourceIndex = -1;
@@ -55,9 +63,14 @@ function nativeGetPlayInfo(url) {
   return null;
 }
 
-function nativePlayVideo(url, title) {
+function nativePlayVideo(url, title, resumeTime) {
   if (bridgeAvailable()) {
-    Android.playVideoNative(JSON.stringify({url: url, title: title || ''}));
+    Android.playVideoNative(JSON.stringify({
+      url: url,
+      title: title || '',
+      resumeTime: (resumeTime && resumeTime > 0) ? resumeTime : 0,
+      volume: volumeLevel
+    }));
     return true;
   }
   return false;
@@ -113,6 +126,42 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toast.classList.add('hidden'), 3000);
 }
 
+// --- Volume Control ---
+function updateVolumeBtn() {
+  let btn = document.getElementById('ctrlVolume');
+  if (!btn) return;
+  btn.textContent = (videoPlayer.muted || volumeLevel === 0) ? '🔇' : '🔊';
+}
+
+function applyVolume(v) {
+  volumeLevel = Math.max(0, Math.min(1, v));
+  videoPlayer.volume = volumeLevel;
+  if (volumeLevel > 0 && videoPlayer.muted) videoPlayer.muted = false;
+  updateVolumeBtn();
+  try { localStorage.setItem(VOLUME_KEY, String(volumeLevel)); } catch (e) {}
+}
+
+function setVolume(v) {
+  applyVolume(v);
+  showToast(videoPlayer.muted ? '已静音' : '音量 ' + Math.round(volumeLevel * 100) + '%');
+}
+
+function toggleMute() {
+  videoPlayer.muted = !videoPlayer.muted;
+  updateVolumeBtn();
+  showToast(videoPlayer.muted ? '已静音' : '音量 ' + Math.round(volumeLevel * 100) + '%');
+}
+
+function initVolume() {
+  try {
+    let saved = parseFloat(localStorage.getItem(VOLUME_KEY));
+    if (isFinite(saved) && saved >= 0 && saved <= 1) volumeLevel = saved;
+  } catch (e) {}
+  videoPlayer.volume = volumeLevel;
+  videoPlayer.muted = false;
+  updateVolumeBtn();
+}
+
 // --- Search ---
 let searchInProgress = false;
 
@@ -147,7 +196,7 @@ async function performSearch() {
     }
     if (!data || !data.results || data.results.length === 0) {
       emptyState.classList.remove('hidden');
-      emptyState.innerHTML = '<p>未找到结果</p>';
+      document.getElementById('emptyHint').textContent = '未找到结果';
       return;
     }
 
@@ -468,6 +517,97 @@ function cycleSpeed() {
   showToast('倍速 ' + SPEED_OPTIONS[speedIndex] + 'x');
 }
 
+// --- Watch History (continue watching) ---
+function loadHistory() {
+  try {
+    let raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    let arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveHistoryEntry(url, title, currentTime, duration) {
+  if (!url || !currentTime || currentTime < 5) return;
+  if (duration && currentTime > duration - 5) return; // watched to end → nothing to resume
+  let history = loadHistory().filter(h => h.url !== url);
+  history.unshift({ url: url, title: title || '', currentTime: currentTime, duration: duration || 0, updatedAt: Date.now() });
+  if (history.length > HISTORY_MAX) history = history.slice(0, HISTORY_MAX);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch (e) {}
+  renderHistory();
+}
+
+function removeHistoryEntry(url) {
+  let history = loadHistory().filter(h => h.url !== url);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch (e) {}
+  renderHistory();
+}
+
+function formatWatchTime(sec) {
+  sec = Math.floor(sec || 0);
+  let h = Math.floor(sec / 3600);
+  let m = Math.floor((sec % 3600) / 60);
+  let s = sec % 60;
+  let mm = String(m).padStart(2, '0');
+  let ss = String(s).padStart(2, '0');
+  return h > 0 ? h + ':' + mm + ':' + ss : mm + ':' + ss;
+}
+
+function renderHistory() {
+  let section = document.getElementById('historySection');
+  if (!section) return;
+  let history = loadHistory();
+  if (history.length === 0) {
+    section.classList.add('hidden');
+    section.innerHTML = '';
+    return;
+  }
+  section.classList.remove('hidden');
+  let cards = history.map(h => {
+    let pct = (h.duration && h.currentTime) ? Math.min(100, Math.round((h.currentTime / h.duration) * 100)) : 0;
+    let timeStr = formatWatchTime(h.currentTime) + (h.duration ? ' / ' + formatWatchTime(h.duration) : '');
+    return '<div class="history-card" tabindex="0" data-url="' + h.url + '">'
+      + '<button class="history-card-remove" data-url="' + h.url + '" title="从历史移除">✕</button>'
+      + '<div class="history-card-title">' + escapeHtml(h.title || '') + '</div>'
+      + '<div class="history-card-progress"><div class="history-card-progress-fill" style="width:' + pct + '%"></div></div>'
+      + '<div class="history-card-time">' + timeStr + '</div>'
+      + '</div>';
+  }).join('');
+  section.innerHTML = '<h2 class="history-title">继续观看</h2><div class="history-cards">' + cards + '</div>';
+
+  section.querySelectorAll('.history-card').forEach(card => {
+    card.addEventListener('click', () => {
+      let entry = loadHistory().find(x => x.url === card.dataset.url);
+      if (entry) resumeFromHistory(entry);
+    });
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        let entry = loadHistory().find(x => x.url === card.dataset.url);
+        if (entry) resumeFromHistory(entry);
+      }
+    });
+  });
+  section.querySelectorAll('.history-card-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeHistoryEntry(btn.dataset.url);
+    });
+  });
+}
+
+function resumeFromHistory(entry) {
+  playVideo(entry.url, entry.title, entry.currentTime || 0);
+}
+
+function saveCurrentProgress() {
+  let t = videoPlayer.currentTime || 0;
+  let d = videoPlayer.duration || 0;
+  if (t > 5 && (!d || t < d - 5)) {
+    saveHistoryEntry(videoPlayer.currentSrc || videoPlayer.src, playerTitle.textContent, t, d);
+  }
+}
+
 // --- Progress bar: click / drag to seek (desktop mouse) ---
 function seekToRatio(ratio) {
   let dur = videoPlayer.duration || 0;
@@ -539,11 +679,7 @@ function toggleFullscreen() {
 function updateNextEpVisibility() {
   let btn = document.getElementById('ctrlNextEp');
   if (!btn) return;
-  let show = currentDetailData && currentDetailData.type === 'tv'
-          && currentPlayLineIndex >= 0 && currentPlayEpisodeIndex >= 0
-          && currentDetailData.lines[currentPlayLineIndex]
-          && currentPlayEpisodeIndex + 1 < currentDetailData.lines[currentPlayLineIndex].items.length;
-  btn.classList.toggle('hidden-nav', !show);
+  btn.classList.toggle('hidden-nav', !hasNextEpisode());
 }
 
 function playNextEpisode() {
@@ -560,6 +696,51 @@ function playNextEpisode() {
   playVideo(item.url, playTitle);
 }
 
+// --- Auto-play next episode when current one ends ---
+function hasNextEpisode() {
+  return currentDetailData && currentDetailData.type === 'tv'
+      && currentPlayLineIndex >= 0 && currentPlayEpisodeIndex >= 0
+      && currentDetailData.lines[currentPlayLineIndex]
+      && currentPlayEpisodeIndex + 1 < currentDetailData.lines[currentPlayLineIndex].items.length;
+}
+
+function onVideoEnded() {
+  if (hasNextEpisode()) {
+    showToast('自动播放下一集');
+    playNextEpisode();
+  } else {
+    showToast('播放结束');
+  }
+}
+
+// --- Native playback bridge callbacks ---
+// Invoked from MainActivity via evaluateJavascript after ExoPlayerActivity finishes.
+// These make watch-history / resume / auto-next work on the Android TV native path,
+// not just the browser HLS.js fallback.
+
+// ExoPlayer finished a video: auto-play the next episode if the finished URL
+// matches the episode we believe is playing, otherwise just notify.
+window.onNativePlaybackEnded = function(url) {
+  let playing = currentDetailData && currentDetailData.type === 'tv'
+      && currentPlayLineIndex >= 0 && currentPlayEpisodeIndex >= 0
+      && currentDetailData.lines[currentPlayLineIndex];
+  if (playing) {
+    let item = currentDetailData.lines[currentPlayLineIndex].items[currentPlayEpisodeIndex];
+    if (item && item.url === url) {
+      onVideoEnded();
+      return;
+    }
+  }
+  showToast('播放结束');
+};
+
+// ExoPlayer saved progress: merge into the JS watch-history store so resume
+// works on TV. info = {url, title, positionMs, durationMs}.
+window.onNativeProgressSaved = function(info) {
+  if (!info || !info.url) return;
+  saveHistoryEntry(info.url, info.title || '', (info.positionMs || 0) / 1000, (info.durationMs || 0) / 1000);
+};
+
 // --- Named listener functions (so they can be removed) ---
 function onVideoPlay() { syncPlayBtn(); }
 function onVideoPause() { syncPlayBtn(); }
@@ -568,13 +749,14 @@ function clearPlayerListeners() {
   videoPlayer.removeEventListener('timeupdate', updatePlayerTime);
   videoPlayer.removeEventListener('play', onVideoPlay);
   videoPlayer.removeEventListener('pause', onVideoPause);
+  videoPlayer.removeEventListener('ended', onVideoEnded);
   videoPlayer.onerror = null;
 }
 
-function playVideo(url, title) {
+function playVideo(url, title, resumeTime) {
   // Use native ExoPlayer when available (Android TV production path)
   // This bypasses all WebView <video> + HLS.js issues (play/pause race, MediaSource, etc.)
-  if (nativePlayVideo(url, title)) {
+  if (nativePlayVideo(url, title, resumeTime)) {
     return;
   }
 
@@ -582,7 +764,7 @@ function playVideo(url, title) {
   playerScreen.classList.add('active');
   playerTitle.textContent = title || '';
 
-  // Reset current time for fresh playback
+  // Reset current time for fresh playback (resumeTime applied in doPlay)
   videoPlayer.currentTime = 0;
 
   // Reset playback speed to 1x for a fresh video
@@ -597,6 +779,7 @@ function playVideo(url, title) {
   videoPlayer.addEventListener('timeupdate', updatePlayerTime);
   videoPlayer.addEventListener('play', onVideoPlay);
   videoPlayer.addEventListener('pause', onVideoPause);
+  videoPlayer.addEventListener('ended', onVideoEnded);
 
   // Assert paused icon (will be updated by play event)
   syncPlayBtn();
@@ -619,6 +802,9 @@ function playVideo(url, title) {
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
 
   function doPlay() {
+    if (resumeTime > 0) {
+      try { videoPlayer.currentTime = resumeTime; } catch (e) {}
+    }
     videoPlayer.play().then(syncPlayBtn).catch(e => {
       console.warn('playVideo play() failed', e);
       syncPlayBtn();
@@ -684,6 +870,7 @@ function playVideo(url, title) {
 }
 
 function exitPlayer() {
+  saveCurrentProgress();
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
   videoPlayer.pause();
   videoPlayer.src = '';
@@ -727,6 +914,8 @@ document.addEventListener('click', (e) => {
   if (btn) { e.stopPropagation(); playNextEpisode(); return; }
   btn = e.target.closest('#ctrlSpeed');
   if (btn) { e.stopPropagation(); cycleSpeed(); return; }
+  btn = e.target.closest('#ctrlVolume');
+  if (btn) { e.stopPropagation(); toggleMute(); return; }
   btn = e.target.closest('#ctrlFullscreen');
   if (btn) { e.stopPropagation(); toggleFullscreen(); return; }
   // Progress bar: don't let bar clicks bubble into click-to-toggle
@@ -743,6 +932,18 @@ document.addEventListener('mousemove', (e) => {
   if (!playerScreen.classList.contains('active')) return;
   showPlayerControls();
 });
+
+// --- Desktop: mouse wheel over the player → adjust volume ---
+let volumeWheelLock = 0;
+document.addEventListener('wheel', (e) => {
+  if (!playerScreen.classList.contains('active')) return;
+  if (e.target.closest('.ctrl-progress')) return;
+  e.preventDefault();
+  let now = Date.now();
+  if (now - volumeWheelLock < 80) return;
+  volumeWheelLock = now;
+  setVolume(volumeLevel + (e.deltaY > 0 ? -0.05 : 0.05));
+}, { passive: false });
 
 // --- Android TV Back Key ---
 document.addEventListener('keydown', (e) => {
@@ -793,9 +994,16 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // M key = mute/unmute (desktop)
+  if (e.key === 'm' || e.key === 'M') {
+    e.preventDefault();
+    toggleMute();
+    return;
+  }
+
   showPlayerControls();
 
-  let ctrlBtns = ['backBtn', 'ctrlNextEp', 'ctrlPlayPause', 'ctrlSpeed', 'ctrlFullscreen'];
+  let ctrlBtns = ['backBtn', 'ctrlNextEp', 'ctrlPlayPause', 'ctrlVolume', 'ctrlSpeed', 'ctrlFullscreen'];
   let active = document.activeElement;
   let activeId = active ? active.id : '';
   let activeIdx = ctrlBtns.indexOf(activeId);
@@ -805,6 +1013,7 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       if (activeId === 'backBtn') { exitPlayer(); }
       else if (activeId === 'ctrlNextEp') { playNextEpisode(); }
+      else if (activeId === 'ctrlVolume') { toggleMute(); }
       else if (activeId === 'ctrlSpeed') { cycleSpeed(); }
       else if (activeId === 'ctrlFullscreen') { toggleFullscreen(); }
       else if (e.target.closest('#playerControls') || e.target.closest('.player-bar')) {
@@ -974,4 +1183,6 @@ searchInputEl.addEventListener('keydown', (e) => {
 window.addEventListener('load', () => {
   searchInputEl.focus();
   setupProgressSeek();
+  initVolume();
+  renderHistory();
 });
