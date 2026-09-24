@@ -5,9 +5,11 @@ Android TV APK ("TVSearch") that searches ikanbot.com and plays videos. Single G
 ## Build & verify
 
 - Build APK: `.\gradlew assembleDebug` (works locally with Android SDK; Java 17 required)
+- **Local build env (this machine)**: `local.properties` (gitignored) pins `sdk.dir=E:\android-sdk` (Platform 35 + Build-Tools 34 installed there). If the gradle-8.9 distribution download from `services.gradle.org` times out, seed the wrapper cache from `https://mirrors.cloud.tencent.com/gradle/gradle-8.9-bin.zip` into `C:\Users\27310\.gradle\wrapper\dists\gradle-8.9-bin\90cnw93cvbtalezasaz0blq0a\` — do NOT edit `gradle-wrapper.properties` (CI relies on the upstream URL).
 - CI: pushing to `master` triggers `.github/workflows/build-apk.yml` → `assembleDebug` → uploads artifact `tv-search-apk`. No tests run in CI.
 - Download CI artifact: `gh run download <run-id> --name tv-search-apk` (artifact name is `tv-search-apk`, NOT `app-release.apk`)
 - APK output: `app/build/outputs/apk/debug/app-debug.apk`
+- **Releases**: `*.apk` is gitignored, so the APK is distributed via GitHub Releases, not git history: `gh release create vX.Y.Z app/build/outputs/apk/debug/app-debug.apk --repo xingchui/tv-apk-builder`. Current release: v1.0.0. Bump `versionCode`/`versionName` in `app/build.gradle` before releasing.
 - Commit style (from history): conventional prefixes — `feat:`, `fix:`, `cleanup:` with optional scopes like `(player)`, `(local-server)`
 
 ## Architecture
@@ -16,6 +18,7 @@ Android TV APK ("TVSearch") that searches ikanbot.com and plays videos. Single G
 - **Scraping lives in Java, not JS**: `WebAppInterface.java` is exposed to the WebView as `Android` and implements `search()`, `getPlayInfo()`, `playVideoNative()`, `exitApp()`, `log()`. It scrapes ikanbot.com with Jsoup and computes the site's `v_tks` token (`computeToken()`).
 - **Playback is native ExoPlayer**: `ExoPlayerActivity.java` (Media3) plays HLS/MP4 with custom `Referer`/`Origin` headers. `app.js` calls `Android.playVideoNative()` when the bridge exists; the HLS.js `<video>` path in `app.js` is ONLY a browser-testing fallback — do not try to fix WebView playback bugs, the native path is the production path.
 - **Native ↔ JS playback bridge (watch history / resume / auto-next / volume on TV)**: `playVideoNative()` accepts `{url, title, resumeTime(sec), volume(0-1)}`; ExoPlayer seeks to `resumeTime` on `STATE_READY` and applies `volume` via `player.setVolume()`. When ExoPlayer stops mid-video (watched ≥5s, not in last 5s), `ExoPlayerActivity.onStop` writes `{url,title,positionMs,durationMs}` to SharedPreferences `tvsearch_playback/progress_json`; when a video ends it writes `ended_url`. `MainActivity.onResume` consumes these keys (delete-after-read) and forwards them to JS via `evaluateJavascript`: `window.onNativeProgressSaved(json)` → `saveHistoryEntry()` and `window.onNativePlaybackEnded(url)` → `playNextEpisode()` (auto-next only if the URL matches the episode currently believed playing). History stays in JS `localStorage` — Java only relays. The browser HLS.js fallback uses its own `ended`/timeupdate listeners instead; keep both paths consistent when changing history/autoplay logic.
+- **Desktop companion (dev preview, not the TV app)**: `desktop-app.py` bundles the same scraper + serves the same `assets/` UI in a native pywebview (WebView2) window, so the app can be tried on a PC without a TV or Android SDK. It embeds `local-server.py` (loaded as a module via `importlib` because of the hyphen in its filename). `python desktop-app.py --smoke` runs a headless self-check (start server → hit APIs → exit). `dist/TVSearch.exe` is a PyInstaller build of this and is committed intentionally (see `.gitignore` `!dist/TVSearch.exe`).
 - Manifest: `MainActivity` + `ExoPlayerActivity`, both landscape; `leanback` required feature; `network_security_config.xml` allows cleartext because video CDNs serve HTTP streams.
 
 ## Gotchas (hard-earned)
