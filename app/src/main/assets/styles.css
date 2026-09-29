@@ -168,6 +168,7 @@ html, body {
   font-size: 18px;
   overflow-y: auto;
 }
+.empty-state.hidden { display: none; }
 .empty-inner {
   display: flex;
   flex-direction: column;
