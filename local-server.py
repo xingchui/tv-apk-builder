@@ -7,16 +7,21 @@ Usage: python local-server.py
 Then open http://localhost:8080
 """
 
+import http.client
 import http.server
 import json
 import re
 import ssl
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 BASE_URL = 'https://www.ikanbot.com'
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+FETCH_ATTEMPTS = 3   # ikanbot.com drops connections often enough to need retries
+FETCH_BACKOFF = 0.8  # seconds; doubles per retry (0.8 / 1.6)
 STATIC_DIR = Path(__file__).parent / 'app' / 'src' / 'main' / 'assets'
 
 
@@ -50,10 +55,27 @@ def normalize_thumbnail(url):
 
 
 def fetch(url):
-    req = urllib.request.Request(url, headers={'User-Agent': UA})
+    """GET url, retrying transient network failures.
+
+    ikanbot.com drops connections mid-read often enough that a lone 15s
+    timeout surfaced as HTTP 500 in the UI ('Local proxy search failed: 500').
+    """
     ctx = ssl.create_default_context()
-    with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-        return resp.read().decode('utf-8', errors='replace')
+    last_exc = None
+    for attempt in range(1, FETCH_ATTEMPTS + 1):
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': UA})
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                return resp.read().decode('utf-8', errors='replace')
+        except urllib.error.HTTPError as e:
+            if e.code < 500:  # 4xx won't improve on retry
+                raise
+            last_exc = e
+        except (OSError, http.client.HTTPException) as e:
+            last_exc = e
+        if attempt < FETCH_ATTEMPTS:
+            time.sleep(FETCH_BACKOFF * (2 ** (attempt - 1)))
+    raise last_exc
 
 
 def _re_first(patterns, text, group=1, flags=0):
@@ -216,6 +238,9 @@ class CombinedHandler(http.server.SimpleHTTPRequestHandler):
                 data = search(q)
                 self.send_json(200, data)
             except Exception as e:
+                import traceback
+                tb = traceback.format_exc()
+                print(f'[search error] {tb}', flush=True)
                 self.send_json(500, {'error': str(e)})
             return
 
